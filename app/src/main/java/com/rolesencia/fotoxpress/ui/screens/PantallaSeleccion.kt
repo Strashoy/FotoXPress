@@ -8,9 +8,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
@@ -36,6 +43,7 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.geometry.Offset
 import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.ui.FotoViewModel
 
@@ -166,7 +174,11 @@ fun VistaEdicion(
     onRotar: (Float) -> Unit,
     onDecidir: (Decision) -> Unit
 ) {
-    // Variables locales para la animación del swipe (Feedback Visual)
+    // ESTADO DEL ZOOM
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // ESTADO DEL SWIPE
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val umbralDecision = 150f // Píxeles que hay que mover para confirmar
 
@@ -181,21 +193,57 @@ fun VistaEdicion(
             modifier = Modifier
                 .weight(0.8f)
                 .fillMaxWidth()
-                .pointerInput(Unit) { // DETECTOR DE SWIPE
-                    detectDragGestures(
-                        onDragEnd = {
-                            // Al soltar, decidimos si fue suficiente
+                // DETECTOR DE "LEVANTAR EL DEDO" (Para decidir Swipe)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown() // 1. Esperamos que toque la pantalla
+
+                        // 2. Esperamos hasta que levante TODOS los dedos
+                        do {
+                            val event = awaitPointerEvent()
+                        } while (event.changes.any { it.pressed })
+
+                        // 3. AL SOLTAR: Decidimos qué hacer
+                        // Solo si no hay zoom activo (margen de error 1.05f)
+                        if (scale <= 1.05f) {
                             if (dragOffset > umbralDecision) {
                                 onDecidir(Decision.CONSERVAR)
                             } else if (dragOffset < -umbralDecision) {
                                 onDecidir(Decision.ELIMINAR)
                             }
-                            dragOffset = 0f // Reset
                         }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        dragOffset += dragAmount.x
+                        // Siempre reseteamos el swipe al soltar
+                        dragOffset = 0f
                     }
+                }
+                // CAPA 2: DETECTOR MATEMÁTICO UNIFICADO (Zoom + Pan)
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        // A) GESTIÓN DEL ZOOM
+                        // Multiplicamos la escala actual por el cambio (zoom)
+                        // Limitamos entre 1x y 5x
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+
+                        // B) GESTIÓN DEL MOVIMIENTO (PAN/SWIPE)
+                        if (scale > 1.05f) {
+                            // MODO ZOOM: El movimiento mueve la foto (Pan)
+                            // Calculamos límites para que la foto no se pierda
+                            val maxOffsetX = (scale - 1) * 2000f
+                            val maxOffsetY = (scale - 1) * 2000f
+
+                            // Aplicamos el 'pan' que nos da el gesto (funciona con 1 o 2 dedos)
+                            val nuevoX = offset.x + pan.x * scale // Multiplicamos por scale para sensación natural
+                            val nuevoY = offset.y + pan.y * scale
+
+                            offset = Offset(
+                                nuevoX.coerceIn(-maxOffsetX, maxOffsetX),
+                                nuevoY.coerceIn(-maxOffsetY, maxOffsetY)
+                            )
+                        } else {
+                            // MODO NORMAL: El movimiento es para Borrar (Swipe)
+                            // Solo nos importa el movimiento horizontal (x)
+                            dragOffset += pan.x
+                        }                    }
                 }
         ) {
             // LA IMAGEN (COIL)
@@ -213,9 +261,22 @@ fun VistaEdicion(
                         // APLICAMOS LA ROTACIÓN VISUAL
                         rotationZ = rotacion
 
-                        // Pequeño efecto de desplazamiento al hacer swipe
-                        translationX = dragOffset
-                        alpha = 1f - (dragOffset.absoluteValue / 1000f) // Se desvanece un poco
+                        // Zoom y Pan
+                        scaleX = scale
+                        scaleY = scale
+
+                        // Aplicamos la traslación correcta según el modo
+                        if (scale > 1.05f) {
+                            translationX = offset.x
+                            translationY = offset.y
+                        } else {
+                            translationX = dragOffset
+                        }
+
+                        // Feedback visual de borrado
+                        if (scale <= 1.05f) {
+                            alpha = 1f - (dragOffset.absoluteValue / 1000f)
+                        }
                     }
             )
 
@@ -225,7 +286,7 @@ fun VistaEdicion(
             GrillaReferencia(visible = estaRotando)
 
             // 3. CAPA DE FEEDBACK (Overlay Verde/Rojo)
-            if (dragOffset.absoluteValue > 10) {
+            if (dragOffset.absoluteValue > 10 && scale <= 1.05f) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
