@@ -2,6 +2,8 @@ package com.rolesencia.fotoxpress.data.repository
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import android.provider.MediaStore
 import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.data.model.FotoEstado
@@ -152,5 +154,24 @@ class FotoRepository(private val context: Context) {
             return android.provider.MediaStore.createWriteRequest(context.contentResolver, uris).intentSender
         }
         return null
+    }
+
+    // Carga el Bitmap desde la URI
+    fun cargarBitmap(uri: Uri): Bitmap? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                android.graphics.BitmapFactory.decodeStream(stream)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Guarda el Bitmap en la URI (Sobreescribe)
+    fun sobrescribirImagen(uri: Uri, bitmap: Bitmap) {
+        context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+            // Comprimimos al 100% de calidad (o 90% para ahorrar espacio)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+        }
     }
 }

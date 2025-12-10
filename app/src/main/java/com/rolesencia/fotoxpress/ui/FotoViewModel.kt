@@ -7,6 +7,7 @@ import com.rolesencia.fotoxpress.data.model.Carpeta // Asegúrate de importar es
 import com.rolesencia.fotoxpress.data.model.Decision
 import com.rolesencia.fotoxpress.data.model.FotoEstado
 import com.rolesencia.fotoxpress.data.repository.FotoRepository
+import com.rolesencia.fotoxpress.domain.image.ImageProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -163,12 +164,12 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     return@launch
                 } else {
-                    // Android antiguo o permiso ya concedido
-                    fotosParaEditar.forEach { repository.guardarRotacion(it.uri, it.rotacion) }
+                    fotosParaEditar.forEach { foto ->
+                        aplicarEdicionConRecorte(foto)
+                    }
                 }
             }
-
-            finalizarProceso()
+            finalizarProceso() // Cache busting y recarga
         }
     }
 
@@ -186,10 +187,13 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
                 // Pasamos directo a editar.
                 procesarEdiciones()
             } else if (accion == "EDITAR") {
-                // En Escritura, el sistema nos dio PERMISO, pero NO rotó la foto.
-                // Ahora sí tenemos llave para entrar.
+                // Ejecutamos la edición real con recorte.
                 val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
-                fotosParaEditar.forEach { repository.guardarRotacion(it.uri, it.rotacion) }
+
+                fotosParaEditar.forEach { foto ->
+                    aplicarEdicionConRecorte(foto)
+                }
+
                 finalizarProceso()
             }
         }
@@ -205,6 +209,32 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
             listaCarpetas = carpetas,
             versionCache = System.currentTimeMillis()
         )
+    }
+
+    private fun aplicarEdicionConRecorte(foto: FotoEstado) {
+        try {
+            // 1. Pedimos al repo que nos de el Bitmap original
+            // (Nota: Tendrás que asegurarte de tener esta función en el repo, ver abajo)
+            val bitmapOriginal = repository.cargarBitmap(foto.uri) ?: return
+
+            // 2. Usamos tu nuevo ImageProcessor para rotar Y recortar (Auto-Crop)
+            val bitmapEditado = ImageProcessor.aplicarEdicion(
+                original = bitmapOriginal,
+                grados = foto.rotacion
+                // scaleUsuario = foto.scaleUsuario // Descomenta si decidiste guardar el zoom manual también
+            )
+
+            // 3. Guardamos el resultado sobrescribiendo el archivo
+            repository.sobrescribirImagen(foto.uri, bitmapEditado)
+
+            // 4. Limpieza de memoria
+            if (bitmapOriginal != bitmapEditado) bitmapOriginal.recycle()
+            // bitmapEditado se recicla solo o al salir, pero cuidado con la memoria aquí.
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Manejar error (opcional)
+        }
     }
 }
 
