@@ -1,5 +1,6 @@
 package com.rolesencia.fotoxpress.ui.screens
 
+import OverlayRecorte
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,7 +44,9 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.ui.FotoViewModel
@@ -185,6 +188,15 @@ fun VistaEdicion(
     // NUEVO: Dimensiones para el cálculo
     var sizeImagen by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
 
+    // NUEVO: Para guardar la proporción real de la foto original
+    var imageAspectRatio by remember { mutableFloatStateOf(1f) }
+
+    // NUEVO: Para saber dónde está el recuadro (para el futuro)
+    var rectRecorte by remember { mutableStateOf(Rect.Zero) }
+
+    // DEFINIMOS EL MARGEN UNIFICADO AQUÍ
+    val margenUnificado = 24.dp
+
     // CÁLCULO REACTIVO DEL AUTO-CROP
     // Cada vez que cambie la rotación, recalculamos el zoom base
     val scaleAutoCrop = remember(rotacion, sizeImagen) {
@@ -210,6 +222,8 @@ fun VistaEdicion(
             modifier = Modifier
                 .weight(0.8f)
                 .fillMaxWidth()
+                .background(Color.Black) // Fondo base negro
+                .clipToBounds() // Recorta solo al borde de la Zona A, no de la foto
                 // DETECTOR DE "LEVANTAR EL DEDO" (Para decidir Swipe)
                 .pointerInput(Unit) {
                     awaitEachGesture {
@@ -271,9 +285,23 @@ fun VistaEdicion(
                     .setParameter("buster", versionCache) // Lo que ve la versión
                     .build(),
                 contentDescription = "Foto Actual",
-                contentScale = ContentScale.Fit, // Que entre entera en la pantalla
+                // AQUÍ CAPTURAMOS LA PROPORCIÓN REAL
+                onSuccess = { state ->
+                    val size = state.painter.intrinsicSize
+                    if (size.height > 0) {
+                        imageAspectRatio = size.width / size.height
+                    }
+                },
+                contentScale = ContentScale.Fit, // Ahora hará Fit dentro del área con padding
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxSize() // Llenará el área con padding
+                    // 1. Le damos padding para que arranque del mismo tamaño que el Overlay
+                    .padding(margenUnificado)
+                    // IMPORTANTE: Permitimos que se dibuje FUERA de ese padding al rotar
+                    .graphicsLayer { clip = false }
+                    .onGloballyPositioned { coordinates ->
+                        sizeImagen = coordinates.size
+                    }
                     .onGloballyPositioned { coordinates -> // Capturamos tamaño real
                         sizeImagen = coordinates.size
                     }
@@ -303,12 +331,22 @@ fun VistaEdicion(
                     }
             )
 
-            // 2. LA GRILLA (Esta NO rota, está fija)
+            // CAPA 2: EL OVERLAY (Encima de la foto)
+            if (imageAspectRatio > 0) {
+                OverlayRecorte(
+                    modifier = Modifier.fillMaxSize(), // Llenará el área con Padding
+                    aspectRatioImagen = imageAspectRatio,
+                    margen = margenUnificado, // Le pasamos el mismo valor
+                    onAreaRecorteCalculada = { rect -> rectRecorte = rect }
+                )
+            }
+
+            // 3. LA GRILLA (Esta NO rota, está fija)
             // Solo la mostramos si no estamos arrastrando para borrar (dragOffset == 0)
             // para no ensuciar la vista cuando quieres decidir.
             GrillaReferencia(visible = estaRotando)
 
-            // 3. CAPA DE FEEDBACK (Overlay Verde/Rojo)
+            // 4. CAPA DE FEEDBACK (Overlay Verde/Rojo)
             if (dragOffset.absoluteValue > 10 && scaleUsuario <= 1.05f) {
                 Box(
                     modifier = Modifier
