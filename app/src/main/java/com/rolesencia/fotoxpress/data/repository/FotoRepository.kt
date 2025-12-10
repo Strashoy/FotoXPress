@@ -84,4 +84,73 @@ class FotoRepository(private val context: Context) {
         }
         return listaFotos
     }
+
+    /**
+     * Intenta borrar el archivo.
+     * Retorna TRUE si se borró, FALSE si falló.
+     */
+    fun eliminarFoto(uri: android.net.Uri): Boolean {
+        return try {
+            val rowsDeleted = context.contentResolver.delete(uri, null, null)
+            rowsDeleted > 0
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+            // AQUÍ es donde Android 10+ grita "¡No es tu foto!"
+            throw e
+        }
+    }
+
+    /**
+     * Lee, rota y sobrescribe.
+     */
+    fun guardarRotacion(uri: android.net.Uri, grados: Float) {
+        try {
+            // 1. Abrir lectura
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val bitmapOriginal = android.graphics.BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+
+            if (bitmapOriginal != null) {
+                // 2. Rotar en memoria
+                val bitmapRotado = com.rolesencia.fotoxpress.utils.ImageUtils.rotarBitmap(bitmapOriginal, grados)
+
+                // 3. Abrir escritura (Modo "w" = Write/Truncate)
+                val outputStream = context.contentResolver.openOutputStream(uri, "w")
+
+                if (outputStream != null) {
+                    // Guardamos manteniendo calidad (95%)
+                    bitmapRotado.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, outputStream)
+                    outputStream.close()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    /**
+     * Genera la "Carta de Solicitud" para que el usuario autorice borrar fotos ajenas.
+     * Solo funciona en Android 10 (API 29) y superior.
+     */
+    fun generarPermisoBorrado(uris: List<android.net.Uri>): android.content.IntentSender? {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) { // Android 11+
+            return android.provider.MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) { // Android 10
+            // En Android 10 es más complicado (RecoverableSecurityException),
+            // pero por simplicidad probemos si tienes Android 11+.
+            return null
+        }
+        return null
+    }
+
+    /**
+     * Genera la "Carta de Solicitud" para que el usuario autorice EDITAR (escribir) fotos ajenas.
+     */
+    fun generarPermisoEscritura(uris: List<android.net.Uri>): android.content.IntentSender? {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) { // Android 11+
+            return android.provider.MediaStore.createWriteRequest(context.contentResolver, uris).intentSender
+        }
+        return null
+    }
 }

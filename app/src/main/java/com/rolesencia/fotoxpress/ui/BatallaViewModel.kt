@@ -26,7 +26,9 @@ class BatallaViewModel(application: Application) : AndroidViewModel(application)
         val fotoActual: FotoEstado? = null,
         val isLoading: Boolean = true,
         val fotosRestantes: Int = 0,
-        val totalFotos: Int = 0
+        val totalFotos: Int = 0,
+        val solicitudPermiso: android.content.IntentSender? = null, // EL POPUP
+        val tipoAccionPendiente: String? = null // "BORRAR" o "EDITAR"
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -111,27 +113,94 @@ class BatallaViewModel(application: Application) : AndroidViewModel(application)
         return "Resumen:\n🗑️ Se borrarán: $aBorrar fotos\n🔄 Se editarán: $aEditar fotos\n✅ Se dejan igual: $aIgnorar fotos"
     }
 
+    // FASE 1: Intentamos borrar primero
     fun ejecutarCambiosReales() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // AQUÍ ES DONDE OCURRIRÁ LA MAGIA REAL
-            listaMaestraFotos.forEach { foto ->
-                when {
-                    foto.decision == Decision.ELIMINAR -> {
-                        // repository.borrarFoto(foto.uri) // PRÓXIMAMENTE
-                        println("SIMULACIÓN: Borrando foto ${foto.id}")
-                    }
-                    foto.decision == Decision.CONSERVAR && foto.rotacion != 0f -> {
-                        // repository.procesarYGuardar(foto) // PRÓXIMAMENTE
-                        println("SIMULACIÓN: Rotando foto ${foto.id} a ${foto.rotacion} grados")
-                    }
+            // 1. Filtramos qué fotos hay que borrar
+            val fotosParaBorrar = listaMaestraFotos.filter { it.decision == Decision.ELIMINAR }
+
+            if (fotosParaBorrar.isNotEmpty()) {
+                val uris = fotosParaBorrar.map { it.uri }
+                // Pedimos el Intent al repo
+                val intentSender = repository.generarPermisoBorrado(uris)
+
+                if (intentSender != null) {
+                    // ¡ALTO! Necesitamos permiso. Le decimos a la UI que muestre el popup.
+                    _uiState.value = _uiState.value.copy(
+                        solicitudPermiso = intentSender,
+                        tipoAccionPendiente = "BORRAR"
+                    )
+                    return@launch // Pausamos aquí hasta que el usuario responda
+                } else {
+                    // Si es Android 9 o inferior, borramos directo
+                    fotosParaBorrar.forEach { repository.eliminarFoto(it.uri) }
                 }
             }
 
-            // Al terminar, volvemos al inicio
-            _uiState.value = _uiState.value.copy(isLoading = false, fotoActual = null, mostrandoCarpetas = true)
+            // Si no había nada que borrar (o ya se borró), pasamos a Fase 2
+            procesarEdiciones()
         }
+    }
+
+    // FASE 2: Procesar ediciones (Rotación)
+    private fun procesarEdiciones() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
+
+            if (fotosParaEditar.isNotEmpty()) {
+                val uris = fotosParaEditar.map { it.uri }
+                val intentSender = repository.generarPermisoEscritura(uris)
+
+                if (intentSender != null) {
+                    _uiState.value = _uiState.value.copy(
+                        solicitudPermiso = intentSender,
+                        tipoAccionPendiente = "EDITAR"
+                    )
+                    return@launch
+                } else {
+                    // Android antiguo o permiso ya concedido
+                    fotosParaEditar.forEach { repository.guardarRotacion(it.uri, it.rotacion) }
+                }
+            }
+
+            finalizarProceso()
+        }
+    }
+
+    // FASE 3: Callback (Cuando el usuario dice "SÍ" en el popup)
+    fun onPermisoOtorgado() {
+        // El usuario dijo SI en el popup.
+        // Limpiamos el popup del estado
+        val accion = _uiState.value.tipoAccionPendiente
+        _uiState.value = _uiState.value.copy(solicitudPermiso = null, tipoAccionPendiente = null)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            if (accion == "BORRAR") {
+                // En Android 11, al aceptar el popup, EL SISTEMA YA BORRÓ LAS FOTOS.
+                // No necesitamos llamar a repository.eliminarFoto() de nuevo.
+                // Pasamos directo a editar.
+                procesarEdiciones()
+            } else if (accion == "EDITAR") {
+                // En Escritura, el sistema nos dio PERMISO, pero NO rotó la foto.
+                // Ahora sí tenemos llave para entrar.
+                val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
+                fotosParaEditar.forEach { repository.guardarRotacion(it.uri, it.rotacion) }
+                finalizarProceso()
+            }
+        }
+    }
+
+    private fun finalizarProceso() {
+        // Recargamos y volvemos al inicio
+        val carpetas = repository.obtenerCarpetasConFotos()
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            fotoActual = null,
+            mostrandoCarpetas = true,
+            listaCarpetas = carpetas
+        )
     }
 }
 

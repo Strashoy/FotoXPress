@@ -3,6 +3,7 @@ package com.rolesencia.fotoxpress.ui.screens
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -63,6 +64,27 @@ fun PantallaBatalla(
             permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
         } else {
             permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    // NUEVO: LANZADOR PARA EL POPUP DE BORRADO/EDICIÓN
+    val launcherAcciones = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            // ¡EL USUARIO DIJO QUE SÍ!
+            viewModel.onPermisoOtorgado()
+        } else {
+            // El usuario dijo que no o canceló. Podrías mostrar un mensaje de error.
+        }
+    }
+
+    // EFECTO: Vigila si el ViewModel pide permiso
+    LaunchedEffect(state.solicitudPermiso) {
+        state.solicitudPermiso?.let { intentSender ->
+            // Lanzamos el popup del sistema
+            val request = IntentSenderRequest.Builder(intentSender).build()
+            launcherAcciones.launch(request)
         }
     }
 
