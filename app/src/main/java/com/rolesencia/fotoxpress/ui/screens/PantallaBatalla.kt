@@ -33,6 +33,10 @@ import com.rolesencia.fotoxpress.data.model.Decision
 import com.rolesencia.fotoxpress.ui.BatallaViewModel
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import com.rolesencia.fotoxpress.data.model.Carpeta
 
 @Composable
 fun PantallaBatalla(
@@ -67,46 +71,61 @@ fun PantallaBatalla(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Black
     ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            when {
-                state.isLoading -> {
-                    // MODO CARGA
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White
-                    )
-                    Text(
-                        "Escaneando Galería...",
-                        color = Color.Gray,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(top = 60.dp)
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+
+            if (state.mostrandoCarpetas) {
+                // MODO 1: SELECCIÓN DE CARPETA
+                if (state.isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                } else {
+                    PantallaSeleccionCarpeta(
+                        carpetas = state.listaCarpetas,
+                        onCarpetaClick = { id -> viewModel.seleccionarCarpeta(id) }
                     )
                 }
-                state.fotoActual == null && !state.isLoading -> {
-                    // MODO "SE ACABARON LAS FOTOS"
+            } else {
+                // MODO 2: BATALLA (Edición)
+                if (state.isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                } else if (state.fotoActual == null) {
+                    // Pantalla de fin
                     Column(
                         modifier = Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(64.dp))
-                        Text("¡Misión Cumplida!", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Text("Has procesado ${state.totalFotos} fotos.", color = Color.Gray)
-                        // Aquí iría el botón de "EXPORTAR RESULTADOS"
+                        Text("¡Misión Cumplida!", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+
+                        // Mostramos el resumen
+                        Text(
+                            text = viewModel.obtenerResumen(),
+                            color = Color.LightGray,
+                            modifier = Modifier.padding(24.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // BOTÓN DE EJECUCIÓN (El importante)
+                        Button(
+                            onClick = { viewModel.ejecutarCambiosReales() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                        ) {
+                            Text("APLICAR CAMBIOS (Simulado)")
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedButton(onClick = { viewModel.volverASeleccion() }) {
+                            Text("Descartar y Salir")
+                        }
                     }
-                }
-                else -> {
-                    // MODO BATALLA (HAY FOTO)
+                } else {
+                    // Vista de edición
                     VistaDeBatalla(
                         uri = state.fotoActual!!.uri,
                         rotacion = state.fotoActual!!.rotacion,
                         fotosRestantes = state.fotosRestantes,
-                        onRotar = { delta -> viewModel.actualizarRotacion(delta) },
-                        onDecidir = { decision -> viewModel.tomarDecision(decision) }
+                        onRotar = { d -> viewModel.actualizarRotacion(d) },
+                        onDecidir = { d -> viewModel.tomarDecision(d) }
                     )
                 }
             }
@@ -230,6 +249,43 @@ fun VistaDeBatalla(
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun PantallaSeleccionCarpeta(
+    carpetas: List<Carpeta>,
+    onCarpetaClick: (String) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.background(Color.Black)
+    ) {
+        items(carpetas) { carpeta ->
+            Card(
+                onClick = { onCarpetaClick(carpeta.id) },
+                colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
+            ) {
+                Column {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(carpeta.primeraFotoUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(120.dp)
+                    )
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(carpeta.nombre, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("${carpeta.cantidadFotos} fotos", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
             }
         }
     }

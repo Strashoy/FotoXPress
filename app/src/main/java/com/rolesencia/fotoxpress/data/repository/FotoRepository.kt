@@ -1,64 +1,87 @@
-package com.example.fotoxpress.data.repository
+package com.rolesencia.fotoxpress.data.repository
 
 import android.content.ContentUris
 import android.content.Context
 import android.provider.MediaStore
+import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.data.model.FotoEstado
 
 class FotoRepository(private val context: Context) {
 
-    /**
-     * Escanea el dispositivo buscando fotos.
-     * Devuelve una lista limpia de objetos FotoEstado listos para usar.
-     */
-    fun obtenerFotosDeDispositivo(): List<FotoEstado> {
-        val listaFotos = mutableListOf<FotoEstado>()
+    // FUNCIÓN 1: Escanear y agrupar carpetas
+    fun obtenerCarpetasConFotos(): List<Carpeta> {
+        val carpetasMap = mutableMapOf<String, Carpeta>()
 
-        // 1. ¿Qué columnas queremos leer de la base de datos de Android?
+        // Pedimos ID de bucket, nombre y ID de foto (para la portada)
         val projection = arrayOf(
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DATE_ADDED
+            MediaStore.Images.Media.BUCKET_ID,
+            MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Images.Media._ID
         )
 
-        // 2. Ordenar por fecha (las más nuevas primero)
+        // Ordenamos por fecha (las más nuevas primero)
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
-        // 3. Ejecutar la consulta (Query)
         val cursor = context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, // ¿Dónde buscar? (Almacenamiento externo)
-            projection, // ¿Qué datos traer?
-            null,       // ¿Filtros? (null = traer todo)
-            null,       // Argumentos del filtro
-            sortOrder   // Orden
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            null, null, sortOrder
         )
 
-        // 4. Procesar los resultados
         cursor?.use {
-            // Obtenemos los índices de las columnas
-            val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val bucketIdCol = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+            val bucketNameCol = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+            val idCol = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
 
             while (it.moveToNext()) {
-                // Leemos el ID numérico de la foto
-                val id = it.getLong(idColumn)
+                val bucketId = it.getString(bucketIdCol) ?: continue
+                val bucketName = it.getString(bucketNameCol) ?: "Desconocido"
+                val imageId = it.getLong(idCol)
 
-                // Convertimos ese ID en una dirección URI válida (content://...)
-                // Esto es lo que COIL necesita para mostrar la imagen.
-                val contentUri = ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    id
-                )
-
-                // Agregamos a nuestra lista
-                listaFotos.add(
-                    FotoEstado(
-                        id = id,
-                        uri = contentUri
-                        // rotacion y decision ya tienen valores por defecto en la clase
+                if (carpetasMap.containsKey(bucketId)) {
+                    // Si ya existe, sumamos 1 al contador
+                    val existente = carpetasMap[bucketId]!!
+                    carpetasMap[bucketId] = existente.copy(cantidadFotos = existente.cantidadFotos + 1)
+                } else {
+                    // Si es nueva, la creamos
+                    val uriPortada = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, imageId
                     )
-                )
+                    carpetasMap[bucketId] = Carpeta(bucketId, bucketName, uriPortada, 1)
+                }
             }
         }
+        return carpetasMap.values.toList().sortedBy { it.nombre }
+    }
 
+    // FUNCIÓN 2: Obtener fotos (con filtro opcional)
+    fun obtenerFotosDeDispositivo(bucketIdFilter: String? = null): List<FotoEstado> {
+        val listaFotos = mutableListOf<FotoEstado>()
+        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+
+        // Si hay filtro, usamos la cláusula SQL "WHERE BUCKET_ID = ?"
+        val selection = if (bucketIdFilter != null) "${MediaStore.Images.Media.BUCKET_ID} = ?" else null
+        val selectionArgs = if (bucketIdFilter != null) arrayOf(bucketIdFilter) else null
+
+        val cursor = context.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            selectionArgs,
+            sortOrder
+        )
+
+        cursor?.use {
+            val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            while (it.moveToNext()) {
+                val id = it.getLong(idColumn)
+                val contentUri = ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
+                )
+                listaFotos.add(FotoEstado(id = id, uri = contentUri))
+            }
+        }
         return listaFotos
     }
 }
