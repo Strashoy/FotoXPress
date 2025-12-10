@@ -5,11 +5,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -167,6 +170,10 @@ fun VistaEdicion(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val umbralDecision = 150f // Píxeles que hay que mover para confirmar
 
+    // EL DETECTOR DE TOQUE DEL DIAL
+    val interactionSource = remember { MutableInteractionSource() }
+    val estaRotando by interactionSource.collectIsDraggedAsState()
+
     Column(modifier = Modifier.fillMaxSize()) {
 
         // --- ZONA A: VISUALIZACIÓN Y DECISIÓN (80%) ---
@@ -212,7 +219,12 @@ fun VistaEdicion(
                     }
             )
 
-            // CAPA DE FEEDBACK (Overlay Verde/Rojo)
+            // 2. LA GRILLA (Esta NO rota, está fija)
+            // Solo la mostramos si no estamos arrastrando para borrar (dragOffset == 0)
+            // para no ensuciar la vista cuando quieres decidir.
+            GrillaReferencia(visible = estaRotando)
+
+            // 3. CAPA DE FEEDBACK (Overlay Verde/Rojo)
             if (dragOffset.absoluteValue > 10) {
                 Box(
                     modifier = Modifier
@@ -255,7 +267,8 @@ fun VistaEdicion(
                     state = rememberDraggableState { delta ->
                         // DIVIDIMOS POR 5 PARA MAYOR PRECISIÓN
                         onRotar(delta / 5)
-                    }
+                    },
+                    interactionSource = interactionSource // Conexión del visor de rotación
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -312,6 +325,61 @@ fun PantallaSeleccionCarpeta(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun GrillaReferencia(
+    visible: Boolean = true
+) {
+    if (!visible) return
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val ancho = size.width
+        val alto = size.height
+
+        // --- Configuración ---
+        val pasoBase = 10.dp.toPx() // Distancia mínima entre cualquier línea
+        val frecuenciaMaestra = 4   // Cada 4 líneas, una es Maestra (Maestra - s - s - s - Maestra)
+
+        // Estilos
+        val colorMaestra = Color.White.copy(alpha = 0.6f)
+        val grosorMaestra = 1.5.dp.toPx()
+
+        val colorSutil = Color.White.copy(alpha = 0.3f) // Muy transparente
+        val grosorSutil = 0.5.dp.toPx() // Hairline (muy fino)
+
+        // 1. DIBUJAR VERTICALES
+        var iX = 1
+        var x = pasoBase
+        while (x < ancho) {
+            val esMaestra = (iX % frecuenciaMaestra == 0)
+
+            drawLine(
+                color = if (esMaestra) colorMaestra else colorSutil,
+                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                end = androidx.compose.ui.geometry.Offset(x, alto),
+                strokeWidth = if (esMaestra) grosorMaestra else grosorSutil
+            )
+            x += pasoBase
+            iX++
+        }
+
+        // 2. DIBUJAR HORIZONTALES
+        var iY = 1
+        var y = pasoBase
+        while (y < alto) {
+            val esMaestra = (iY % frecuenciaMaestra == 0)
+
+            drawLine(
+                color = if (esMaestra) colorMaestra else colorSutil,
+                start = androidx.compose.ui.geometry.Offset(0f, y),
+                end = androidx.compose.ui.geometry.Offset(ancho, y),
+                strokeWidth = if (esMaestra) grosorMaestra else grosorSutil
+            )
+            y += pasoBase
+            iY++
         }
     }
 }
