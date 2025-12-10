@@ -44,8 +44,12 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.ui.FotoViewModel
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun PantallaSeleccion(
@@ -175,8 +179,21 @@ fun VistaEdicion(
     onDecidir: (Decision) -> Unit
 ) {
     // ESTADO DEL ZOOM
-    var scale by remember { mutableFloatStateOf(1f) }
+    var scaleUsuario by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // NUEVO: Dimensiones para el cálculo
+    var sizeImagen by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+
+    // CÁLCULO REACTIVO DEL AUTO-CROP
+    // Cada vez que cambie la rotación, recalculamos el zoom base
+    val scaleAutoCrop = remember(rotacion, sizeImagen) {
+        calcularAutoCrop(
+            ancho = sizeImagen.width.toFloat(),
+            alto = sizeImagen.height.toFloat(),
+            grados = rotacion
+        )
+    }
 
     // ESTADO DEL SWIPE
     var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -205,7 +222,7 @@ fun VistaEdicion(
 
                         // 3. AL SOLTAR: Decidimos qué hacer
                         // Solo si no hay zoom activo (margen de error 1.05f)
-                        if (scale <= 1.05f) {
+                        if (scaleUsuario <= 1.05f) {
                             if (dragOffset > umbralDecision) {
                                 onDecidir(Decision.CONSERVAR)
                             } else if (dragOffset < -umbralDecision) {
@@ -222,18 +239,18 @@ fun VistaEdicion(
                         // A) GESTIÓN DEL ZOOM
                         // Multiplicamos la escala actual por el cambio (zoom)
                         // Limitamos entre 1x y 5x
-                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        scaleUsuario = (scaleUsuario * zoom).coerceIn(1f, 5f)
 
                         // B) GESTIÓN DEL MOVIMIENTO (PAN/SWIPE)
-                        if (scale > 1.05f) {
+                        if (scaleUsuario > 1.05f) {
                             // MODO ZOOM: El movimiento mueve la foto (Pan)
                             // Calculamos límites para que la foto no se pierda
-                            val maxOffsetX = (scale - 1) * 2000f
-                            val maxOffsetY = (scale - 1) * 2000f
+                            val maxOffsetX = (scaleUsuario - 1) * 2000f
+                            val maxOffsetY = (scaleUsuario - 1) * 2000f
 
                             // Aplicamos el 'pan' que nos da el gesto (funciona con 1 o 2 dedos)
-                            val nuevoX = offset.x + pan.x * scale // Multiplicamos por scale para sensación natural
-                            val nuevoY = offset.y + pan.y * scale
+                            val nuevoX = offset.x + pan.x * scaleUsuario // Multiplicamos por scale para sensación natural
+                            val nuevoY = offset.y + pan.y * scaleUsuario
 
                             offset = Offset(
                                 nuevoX.coerceIn(-maxOffsetX, maxOffsetX),
@@ -257,16 +274,22 @@ fun VistaEdicion(
                 contentScale = ContentScale.Fit, // Que entre entera en la pantalla
                 modifier = Modifier
                     .fillMaxSize()
+                    .onGloballyPositioned { coordinates -> // Capturamos tamaño real
+                        sizeImagen = coordinates.size
+                    }
                     .graphicsLayer {
                         // APLICAMOS LA ROTACIÓN VISUAL
                         rotationZ = rotacion
 
-                        // Zoom y Pan
-                        scaleX = scale
-                        scaleY = scale
+                        // 2. FUSIÓN DE ESCALAS
+                        // Multiplicamos la automática por la manual
+                        val escalaFinal = scaleAutoCrop * scaleUsuario
+
+                        scaleX = escalaFinal
+                        scaleY = escalaFinal
 
                         // Aplicamos la traslación correcta según el modo
-                        if (scale > 1.05f) {
+                        if (scaleUsuario > 1.05f) {
                             translationX = offset.x
                             translationY = offset.y
                         } else {
@@ -274,7 +297,7 @@ fun VistaEdicion(
                         }
 
                         // Feedback visual de borrado
-                        if (scale <= 1.05f) {
+                        if (scaleUsuario <= 1.05f) {
                             alpha = 1f - (dragOffset.absoluteValue / 1000f)
                         }
                     }
@@ -286,7 +309,7 @@ fun VistaEdicion(
             GrillaReferencia(visible = estaRotando)
 
             // 3. CAPA DE FEEDBACK (Overlay Verde/Rojo)
-            if (dragOffset.absoluteValue > 10 && scale <= 1.05f) {
+            if (dragOffset.absoluteValue > 10 && scaleUsuario <= 1.05f) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -443,4 +466,23 @@ fun GrillaReferencia(
             iY++
         }
     }
+}
+
+fun calcularAutoCrop(ancho: Float, alto: Float, grados: Float): Float {
+    if (ancho == 0f || alto == 0f) return 1f
+
+    val rad = Math.toRadians(abs(grados.toDouble()))
+    val sinRad = sin(rad)
+    val cosRad = cos(rad)
+
+    // Calculamos las nuevas dimensiones de la "Caja Rotada"
+    val anchoRotado = ancho * cosRad + alto * sinRad
+    val altoRotado = ancho * sinRad + alto * cosRad
+
+    // Calculamos cuánto hay que estirar para que cubra el original
+    // Tomamos el MAYOR factor necesario para asegurar que no queden huecos
+    val factorAncho = anchoRotado / ancho
+    val factorAlto = altoRotado / alto
+
+    return Math.max(factorAncho, factorAlto).toFloat()
 }
