@@ -28,17 +28,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.rolesencia.fotoxpress.data.model.Decision
-import com.rolesencia.fotoxpress.ui.BatallaViewModel
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import com.rolesencia.fotoxpress.data.model.Carpeta
+import com.rolesencia.fotoxpress.ui.FotoViewModel
 
 @Composable
-fun PantallaBatalla(
-    viewModel: BatallaViewModel = viewModel()
+fun PantallaSeleccion(
+    viewModel: FotoViewModel = viewModel()
 ) {
     // 1. OBSERVAMOS EL ESTADO DEL VIEWMODEL
     // Cada vez que el VM cambie algo, esta variable 'state' se actualizará y repintará la pantalla.
@@ -99,6 +99,7 @@ fun PantallaBatalla(
                 } else {
                     PantallaSeleccionCarpeta(
                         carpetas = state.listaCarpetas,
+                        versionCache = state.versionCache, // <--- PASAMOS EL DATO
                         onCarpetaClick = { id -> viewModel.seleccionarCarpeta(id) }
                     )
                 }
@@ -139,10 +140,11 @@ fun PantallaBatalla(
                     }
                 } else {
                     // Vista de edición
-                    VistaDeBatalla(
+                    VistaEdicion(
                         uri = state.fotoActual!!.uri,
                         rotacion = state.fotoActual!!.rotacion,
                         fotosRestantes = state.fotosRestantes,
+                        versionCache = state.versionCache,
                         onRotar = { d -> viewModel.actualizarRotacion(d) },
                         onDecidir = { d -> viewModel.tomarDecision(d) }
                     )
@@ -153,10 +155,11 @@ fun PantallaBatalla(
 }
 
 @Composable
-fun VistaDeBatalla(
+fun VistaEdicion(
     uri: android.net.Uri,
     rotacion: Float,
     fotosRestantes: Int,
+    versionCache: Long, // Recibimos el dato
     onRotar: (Float) -> Unit,
     onDecidir: (Decision) -> Unit
 ) {
@@ -193,6 +196,7 @@ fun VistaDeBatalla(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(uri)
                     .crossfade(true) // Transición suave
+                    .setParameter("buster", versionCache) // Lo que ve la versión
                     .build(),
                 contentDescription = "Foto Actual",
                 contentScale = ContentScale.Fit, // Que entre entera en la pantalla
@@ -276,6 +280,7 @@ fun VistaDeBatalla(
 @Composable
 fun PantallaSeleccionCarpeta(
     carpetas: List<Carpeta>,
+    versionCache: Long, // Recibimos el dato
     onCarpetaClick: (String) -> Unit
 ) {
     LazyVerticalGrid(
@@ -295,6 +300,7 @@ fun PantallaSeleccionCarpeta(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(carpeta.primeraFotoUri)
                             .crossfade(true)
+                            .setParameter("buster", versionCache) // Lo que ve la versión
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,

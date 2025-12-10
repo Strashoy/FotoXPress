@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 // Llamamos a nuestra nueva pantalla
-                com.rolesencia.fotoxpress.ui.screens.PantallaBatalla()
+                com.rolesencia.fotoxpress.ui.screens.PantallaSeleccion()
             }
         }
     }

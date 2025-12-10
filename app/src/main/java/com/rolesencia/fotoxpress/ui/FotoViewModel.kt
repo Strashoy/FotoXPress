@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class BatallaViewModel(application: Application) : AndroidViewModel(application) {
+class FotoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FotoRepository(application)
     private var listaMaestraFotos = mutableListOf<FotoEstado>()
@@ -21,14 +21,15 @@ class BatallaViewModel(application: Application) : AndroidViewModel(application)
 
     // ESTADO DE LA UI
     data class UiState(
-        val mostrandoCarpetas: Boolean = true, // Nuevo: ¿Estamos eligiendo carpeta?
-        val listaCarpetas: List<Carpeta> = emptyList(), // Nuevo: La lista para mostrar
+        val mostrandoCarpetas: Boolean = true, // ¿Estamos eligiendo carpeta?
+        val listaCarpetas: List<Carpeta> = emptyList(), // La lista para mostrar
         val fotoActual: FotoEstado? = null,
         val isLoading: Boolean = true,
         val fotosRestantes: Int = 0,
         val totalFotos: Int = 0,
         val solicitudPermiso: android.content.IntentSender? = null, // EL POPUP
-        val tipoAccionPendiente: String? = null // "BORRAR" o "EDITAR"
+        val tipoAccionPendiente: String? = null, // "BORRAR" o "EDITAR"
+        val versionCache: Long = System.currentTimeMillis() // Firma de tiempo
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -43,9 +44,11 @@ class BatallaViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true, mostrandoCarpetas = true)
             val carpetas = repository.obtenerCarpetasConFotos()
+
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                listaCarpetas = carpetas
+                listaCarpetas = carpetas,
+                versionCache = System.currentTimeMillis() // Ve la versión
             )
         }
     }
@@ -199,7 +202,8 @@ class BatallaViewModel(application: Application) : AndroidViewModel(application)
             isLoading = false,
             fotoActual = null,
             mostrandoCarpetas = true,
-            listaCarpetas = carpetas
+            listaCarpetas = carpetas,
+            versionCache = System.currentTimeMillis()
         )
     }
 }
