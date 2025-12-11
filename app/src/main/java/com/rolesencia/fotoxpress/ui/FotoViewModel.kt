@@ -11,8 +11,10 @@ import com.rolesencia.fotoxpress.data.repository.FotoRepository
 import com.rolesencia.fotoxpress.domain.image.ImageProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
@@ -24,11 +26,14 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
     // Guardar ID de la sesión actual
     private var currentSesionId: Long? = null
+    // Escuchamos la DB en tiempo real
+    val listaSesiones = repository.obtenerSesionesActivas()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- NUEVO: ESTADO DE NAVEGACIÓN ---
-    enum class VistaActual { CARPETAS, GALERIA, EDITOR }
+    enum class VistaActual { INICIO, CARPETAS, GALERIA, EDITOR }
 
-    private val _vistaActual = MutableStateFlow(VistaActual.CARPETAS)
+    private val _vistaActual = MutableStateFlow(VistaActual.INICIO)
     val vistaActual: StateFlow<VistaActual> = _vistaActual.asStateFlow()
 
     // --- NUEVO: ESTADO DE SELECCIÓN ---
@@ -53,10 +58,6 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
-
-    init {
-        cargarCarpetas()
-    }
 
     // LÓGICA 1: Cargar la lista de carpetas
     fun cargarCarpetas() {
@@ -183,8 +184,7 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     fun manejarVolver() {
         when (_vistaActual.value) {
             VistaActual.EDITOR -> {
-                // Salimos del editor, volvemos a la galería de esa carpeta
-                // (Opcional: aquí podrías recargar las fotos crudas si quisieras actualizar cambios)
+                // Del Editor volvemos a la Galería
                 _vistaActual.value = VistaActual.GALERIA
                 _uiState.value = _uiState.value.copy(fotoActual = null)
             }
@@ -192,12 +192,18 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
                 if (_fotosSeleccionadas.value.isNotEmpty()) {
                     limpiarSeleccion()
                 } else {
+                    // De la Galería volvemos a elegir Carpeta
                     _vistaActual.value = VistaActual.CARPETAS
-                    cargarCarpetas() // Recargamos lista de carpetas
+                    cargarCarpetas()
                 }
             }
             VistaActual.CARPETAS -> {
-                // Aquí la UI debería delegar al sistema para cerrar la app
+                // De elegir Carpeta volvemos al Home (Dashboard)
+                _vistaActual.value = VistaActual.INICIO
+            }
+            VistaActual.INICIO -> {
+                // Estamos en la raíz. No hacemos nada aquí.
+                // La UI detectará que no manejamos el evento y cerrará la app.
             }
         }
     }
@@ -360,5 +366,33 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }
+    }
+
+    fun retomarSesion(sesionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            // 1. Cargamos las fotos DESDE LA DB (No del disco)
+            listaMaestraFotos = repository.cargarFotosDeSesion(sesionId).toMutableList()
+            currentSesionId = sesionId
+            indiceActual = 0 // O podrías guardar el índice en la DB para volver exacto donde estabas
+
+            // 2. Directo al Editor
+            _uiState.value = _uiState.value.copy(isLoading = false, fotoActual = null)
+            actualizarFotoVisible()
+            _vistaActual.value = VistaActual.EDITOR
+        }
+    }
+
+    fun borrarSesion(sesionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.eliminarSesion(sesionId)
+        }
+    }
+
+    fun irANuevaImportacion() {
+        // Esto hace lo que hacía antes el 'init': va a elegir carpetas
+        cargarCarpetas()
+        _vistaActual.value = VistaActual.CARPETAS
     }
 }

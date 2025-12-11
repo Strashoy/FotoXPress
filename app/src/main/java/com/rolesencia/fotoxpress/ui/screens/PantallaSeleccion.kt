@@ -145,7 +145,23 @@ fun PantallaSeleccion() {
             // --- AQUÍ DECIDIMOS QUÉ PANTALLA MOSTRAR ---
             when (vistaActual) {
 
-                // PANTALLA 1: LISTA DE CARPETAS
+                // EL DASHBOARD
+                FotoViewModel.VistaActual.INICIO -> {
+                    // Necesitas observar la lista de sesiones
+                    // Agrega esta línea arriba junto a las otras observaciones:
+                    // val listaSesiones by viewModel.listaSesiones.collectAsState()
+
+                    val listaSesiones by viewModel.listaSesiones.collectAsState()
+
+                    PantallaInicio(
+                        sesiones = listaSesiones,
+                        onNuevaSesion = { viewModel.irANuevaImportacion() },
+                        onRetomarSesion = { id -> viewModel.retomarSesion(id) },
+                        onBorrarSesion = { id -> viewModel.borrarSesion(id) }
+                    )
+                }
+
+                // PANTALLA 2: LISTA DE CARPETAS
                 FotoViewModel.VistaActual.CARPETAS -> {
                     if (state.isLoading) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))

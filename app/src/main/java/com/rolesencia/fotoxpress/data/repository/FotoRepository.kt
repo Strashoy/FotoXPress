@@ -235,4 +235,16 @@ class FotoRepository(
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
         }
     }
+
+    // --- DASHBOARD ---
+    // Usamos Flow para que la lista se actualice sola si borramos una sesión
+    fun obtenerSesionesActivas(): kotlinx.coroutines.flow.Flow<List<SesionEntity>> {
+        return sesionDao.obtenerTodasLasSesiones()
+    }
+
+    // Borrar una sesión (el "tacho de basura" del dashboard)
+    suspend fun eliminarSesion(sesionId: Long) {
+        sesionDao.eliminarSesion(sesionId)
+        // Gracias a ON DELETE CASCADE, las fotos vinculadas se borran solas de la DB
+    }
 }
