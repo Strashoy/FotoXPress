@@ -1,7 +1,8 @@
 package com.rolesencia.fotoxpress.ui
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.rolesencia.fotoxpress.data.model.Carpeta // Asegúrate de importar esto
 import com.rolesencia.fotoxpress.data.model.Decision
@@ -14,11 +15,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class FotoViewModel(application: Application) : AndroidViewModel(application) {
+class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
-    private val repository = FotoRepository(application)
     private var listaMaestraFotos = mutableListOf<FotoEstado>()
     private var indiceActual = 0
+
+    // Guardar ID de la sesión actual
+    private var currentSesionId: Long? = null
 
     // ESTADO DE LA UI
     data class UiState(
@@ -59,11 +62,22 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true, mostrandoCarpetas = false)
 
-            // Pedimos al repo SOLO las fotos de esa carpeta
-            listaMaestraFotos = repository.obtenerFotosDeDispositivo(bucketId).toMutableList()
-            indiceActual = 0
+            // PASO A: Obtenemos las URIs crudas del dispositivo (usando tu método viejo)
+            // Nota: Asumo que 'obtenerFotosDeDispositivo' devuelve List<FotoEstado>.
+            // Si devuelve otra cosa, ajusta el map.
+            val fotosOriginales = repository.obtenerFotosDeDispositivo(bucketId)
+            val uris = fotosOriginales.map { it.uri }
 
-            if (listaMaestraFotos.isNotEmpty()) {
+            if (uris.isNotEmpty()) {
+                // PASO B (NUEVO): Creamos la Sesión en la Base de Datos
+                val nombreSesion = "Sesión ${System.currentTimeMillis()}" // Puedes mejorar el nombre luego
+                val idSesion = repository.crearNuevaSesion(nombreSesion, uris)
+                currentSesionId = idSesion
+
+                // PASO C (NUEVO): Ahora cargamos las fotos DESDE LA BASE DE DATOS (Entities -> Models)
+                listaMaestraFotos = repository.cargarFotosDeSesion(idSesion).toMutableList()
+
+                indiceActual = 0
                 actualizarFotoVisible()
             } else {
                 _uiState.value = _uiState.value.copy(isLoading = false, fotoActual = null)
@@ -73,22 +87,37 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
 
     // Para el botón "Volver"
     fun volverASeleccion() {
+        currentSesionId = null // Limpiamos la sesión al salir
         cargarCarpetas()
     }
 
-    // --- MÉTODOS EXISTENTES (IGUAL QUE ANTES) ---
+    // --- EDICIÓN CON PERSISTENCIA INSTANTÁNEA (Entretiempo) ---
     fun actualizarRotacion(deltaRotacion: Float) {
         val foto = _uiState.value.fotoActual ?: return
         val nuevaRotacion = foto.rotacion + deltaRotacion
         val fotoActualizada = foto.copy(rotacion = nuevaRotacion)
+
+        // 1. Actualizamos UI (Rápido)
         listaMaestraFotos[indiceActual] = fotoActualizada
         _uiState.value = _uiState.value.copy(fotoActual = fotoActualizada)
+
+        // 2. Actualizamos DB (Persistencia)
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.actualizarEstadoFoto(foto.id, fotoActualizada.rotacion, fotoActualizada.decision)
+        }
     }
 
     fun tomarDecision(decision: Decision) {
         val foto = _uiState.value.fotoActual ?: return
         val fotoDecidida = foto.copy(decision = decision)
+
+        // 1. Actualizamos UI
         listaMaestraFotos[indiceActual] = fotoDecidida
+
+        // 2. NUEVO: Actualizamos DB
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.actualizarEstadoFoto(foto.id, fotoDecidida.rotacion, fotoDecidida.decision)
+        }
 
         if (indiceActual < listaMaestraFotos.size - 1) {
             indiceActual++
@@ -118,6 +147,7 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // FASE 1: Intentamos borrar primero
+    // Nota: Aquí leemos de 'listaMaestraFotos', que está sincronizada con la DB, así que es seguro.
     fun ejecutarCambiosReales() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -200,15 +230,19 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun finalizarProceso() {
+        // Al finalizar, podríamos borrar la sesión de la DB si quisiéramos
+        // repository.eliminarSesion(currentSesionId) <- Pendiente para el futuro
         // Recargamos y volvemos al inicio
-        val carpetas = repository.obtenerCarpetasConFotos()
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            fotoActual = null,
-            mostrandoCarpetas = true,
-            listaCarpetas = carpetas,
-            versionCache = System.currentTimeMillis()
-        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val carpetas = repository.obtenerCarpetasConFotos()
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                fotoActual = null,
+                mostrandoCarpetas = true,
+                listaCarpetas = carpetas,
+                versionCache = System.currentTimeMillis()
+            )
+        }
     }
 
     private fun aplicarEdicionConRecorte(foto: FotoEstado) {
@@ -234,6 +268,19 @@ class FotoViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             e.printStackTrace()
             // Manejar error (opcional)
+        }
+    }
+
+    // --- CLASE FACTORY (NECESARIA PARA INYECTAR DEPENDENCIAS) ---
+// Copia esto al final del archivo FotoViewModel.kt
+
+    class FotoViewModelFactory(private val repository: FotoRepository) : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(FotoViewModel::class.java)) {
+                @Suppress("UNCHECKED_CAST")
+                return FotoViewModel(repository) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class")
         }
     }
 }

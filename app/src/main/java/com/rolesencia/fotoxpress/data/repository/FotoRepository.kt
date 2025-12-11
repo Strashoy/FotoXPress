@@ -5,10 +5,71 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import com.rolesencia.fotoxpress.data.local.dao.SesionDao
 import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.data.model.FotoEstado
+import com.rolesencia.fotoxpress.data.local.entity.FotoEntity
+import com.rolesencia.fotoxpress.data.local.entity.SesionEntity
+import com.rolesencia.fotoxpress.data.model.Decision
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+class FotoRepository(
+    private val context: Context,
+    private val sesionDao: SesionDao // El encargado de controlar
+) {
+    // --- MÉTODOS DE SESIÓN (NUEVOS) ---
 
-class FotoRepository(private val context: Context) {
+    // 1. Crear una nueva sesión (Partido)
+    suspend fun crearNuevaSesion(nombre: String, urisFotos: List<Uri>): Long {
+        return withContext(Dispatchers.IO) {
+            // A. Creamos la "Caja" de la sesión
+            val nuevaSesion = SesionEntity(
+                nombre = nombre,
+                fechaCreacion = System.currentTimeMillis(),
+                cantidadFotos = urisFotos.size
+            )
+            val sesionId = sesionDao.crearSesion(nuevaSesion)
+
+            // B. Guardamos las fotos en el inventario (Entity)
+            val fotosEntities = urisFotos.mapIndexed { index, uri ->
+                FotoEntity(
+                    sesionId = sesionId,
+                    uriString = uri.toString(),
+                    orden = index,
+                    decision = "PENDIENTE"
+                )
+            }
+            sesionDao.insertarFotos(fotosEntities)
+
+            return@withContext sesionId
+        }
+    }
+
+    // 2. Cargar una sesión existente (Aquí ocurre la traducción Entity -> Model)
+    suspend fun cargarFotosDeSesion(sesionId: Long): List<FotoEstado> {
+        return withContext(Dispatchers.IO) {
+            val entities = sesionDao.obtenerFotosDeSesion(sesionId)
+
+            // CONVERTIDOR: Entity (BD) -> Model (UI)
+            entities.map { entity ->
+                FotoEstado(
+                    id = entity.id, // ID interno de la BD
+                    uri = Uri.parse(entity.uriString),
+                    rotacion = entity.rotacion,
+                    decision = Decision.valueOf(entity.decision) // String a Enum
+                )
+            }
+        }
+    }
+
+    // 3. Guardar Entretiempo (Actualizar DB rápido)
+    suspend fun actualizarEstadoFoto(fotoId: Long, rotacion: Float, decision: Decision) {
+        withContext(Dispatchers.IO) {
+            // Actualizamos campos individuales para ser eficientes
+            sesionDao.actualizarRotacion(fotoId, rotacion)
+            sesionDao.actualizarDecision(fotoId, decision.name)
+        }
+    }
 
     // FUNCIÓN 1: Escanear y agrupar carpetas
     fun obtenerCarpetasConFotos(): List<Carpeta> {

@@ -48,22 +48,35 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
+import com.rolesencia.fotoxpress.FotoXPressApp
 import com.rolesencia.fotoxpress.data.model.Carpeta
+import com.rolesencia.fotoxpress.data.repository.FotoRepository
 import com.rolesencia.fotoxpress.ui.FotoViewModel
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun PantallaSeleccion(
-    viewModel: FotoViewModel = viewModel()
-) {
+fun PantallaSeleccion() {
+
+    // --- INYECCIÓN DE DEPENDENCIAS MANUAL (NUEVO) ---
+    val context = LocalContext.current
+    // Obtenemos la aplicación para acceder a la Base de Datos
+    val app = context.applicationContext as FotoXPressApp
+    val db = app.database
+
+    // Creamos el Repo y el Factory (Usamos 'remember' para no recrearlos cada vez que la pantalla parpadea)
+    val repo = remember { FotoRepository(context, db.sesionDao()) }
+    val factory = remember { FotoViewModel.FotoViewModelFactory(repo) }
+
+    // Obtenemos el ViewModel usando la Factory que acabamos de crear
+    val viewModel: FotoViewModel = viewModel(factory = factory)
+
     // 1. OBSERVAMOS EL ESTADO DEL VIEWMODEL
     // Cada vez que el VM cambie algo, esta variable 'state' se actualizará y repintará la pantalla.
     val state by viewModel.uiState.collectAsState()
 
     // 2. GESTIÓN DE PERMISOS (Vital para que funcione)
-    val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
