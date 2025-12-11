@@ -3,11 +3,15 @@ package com.rolesencia.fotoxpress.ui.screens
 import OverlayRecorte
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -44,17 +48,23 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.rolesencia.fotoxpress.FotoXPressApp
 import com.rolesencia.fotoxpress.data.model.Carpeta
+import com.rolesencia.fotoxpress.data.model.FotoEstado
 import com.rolesencia.fotoxpress.data.repository.FotoRepository
 import com.rolesencia.fotoxpress.ui.FotoViewModel
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import com.rolesencia.fotoxpress.ui.screens.PantallaGaleriaSeleccion
 
 @Composable
 fun PantallaSeleccion() {
@@ -75,8 +85,15 @@ fun PantallaSeleccion() {
     // 1. OBSERVAMOS EL ESTADO DEL VIEWMODEL
     // Cada vez que el VM cambie algo, esta variable 'state' se actualizará y repintará la pantalla.
     val state by viewModel.uiState.collectAsState()
+    val vistaActual by viewModel.vistaActual.collectAsState() // Navegación
+    val seleccionadas by viewModel.fotosSeleccionadas.collectAsState() // Selección
 
-    // 2. GESTIÓN DE PERMISOS (Vital para que funcione)
+    // 2. GESTIÓN DEL BOTÓN ATRÁS (Sistema)
+    BackHandler {
+        viewModel.manejarVolver()
+    }
+
+    // 3. GESTIÓN DE PERMISOS (Vital para que funcione)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -95,7 +112,7 @@ fun PantallaSeleccion() {
         }
     }
 
-    // NUEVO: LANZADOR PARA EL POPUP DE BORRADO/EDICIÓN
+    // LANZADOR PARA EL POPUP DE BORRADO/EDICIÓN
     val launcherAcciones = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -116,71 +133,115 @@ fun PantallaSeleccion() {
         }
     }
 
-    // 3. ESTRUCTURA PRINCIPAL
+
+
+    // 4. ESTRUCTURA PRINCIPAL DE NAVEGACIÓN
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Black
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
-            if (state.mostrandoCarpetas) {
-                // MODO 1: SELECCIÓN DE CARPETA
-                if (state.isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                } else {
-                    PantallaSeleccionCarpeta(
-                        carpetas = state.listaCarpetas,
-                        versionCache = state.versionCache, // <--- PASAMOS EL DATO
-                        onCarpetaClick = { id -> viewModel.seleccionarCarpeta(id) }
-                    )
-                }
-            } else {
-                // MODO 2: BATALLA (Edición)
-                if (state.isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                } else if (state.fotoActual == null) {
-                    // Pantalla de fin
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("¡Misión Cumplida!", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            // --- AQUÍ DECIDIMOS QUÉ PANTALLA MOSTRAR ---
+            when (vistaActual) {
 
-                        // Mostramos el resumen
-                        Text(
-                            text = viewModel.obtenerResumen(),
-                            color = Color.LightGray,
-                            modifier = Modifier.padding(24.dp)
+                // PANTALLA 1: LISTA DE CARPETAS
+                FotoViewModel.VistaActual.CARPETAS -> {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else {
+                        PantallaSeleccionCarpeta(
+                            carpetas = state.listaCarpetas,
+                            versionCache = state.versionCache,
+                            onCarpetaClick = { id ->
+                                // Ahora abre la galería intermedia, no el editor directo
+                                viewModel.abrirCarpetaEnGaleria(id)
+                            }
                         )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // BOTÓN DE EJECUCIÓN (El importante)
-                        Button(
-                            onClick = { viewModel.ejecutarCambiosReales() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                        ) {
-                            Text("APLICAR CAMBIOS (Simulado)")
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        OutlinedButton(onClick = { viewModel.volverASeleccion() }) {
-                            Text("Descartar y Salir")
-                        }
                     }
-                } else {
-                    // Vista de edición
-                    VistaEdicion(
-                        uri = state.fotoActual!!.uri,
-                        rotacion = state.fotoActual!!.rotacion,
-                        fotosRestantes = state.fotosRestantes,
-                        versionCache = state.versionCache,
-                        onRotar = { d -> viewModel.actualizarRotacion(d) },
-                        onDecidir = { d -> viewModel.tomarDecision(d) }
-                    )
+                }
+
+                // PANTALLA 2: GALERÍA DE SELECCIÓN (NUEVA)
+                FotoViewModel.VistaActual.GALERIA -> {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else {
+                        PantallaGaleriaSeleccion(
+                            fotos = viewModel.obtenerListaActual(), // Debes tener este métod público en el VM
+                            seleccionadas = seleccionadas,
+                            onToggleSeleccion = { viewModel.toggleSeleccion(it) },
+                            onRangoSeleccion = { viewModel.seleccionarRango(it) },
+                            onCrearSesion = { viewModel.confirmarSeleccionYCrearSesion() },
+                            onSeleccionarTodo = { viewModel.seleccionarTodo() },
+                            onCancelar = { viewModel.limpiarSeleccion() },
+                            onVolver = { viewModel.manejarVolver() } // Para salir de la carpeta
+
+                        )
+                    }
+                }
+
+                // PANTALLA 3: EDITOR (Lo que ya tenías)
+                FotoViewModel.VistaActual.EDITOR -> {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else if (state.fotoActual == null) {
+                        // Pantalla de Resumen / Fin
+                        PantallaResumen(
+                            resumen = viewModel.obtenerResumen(),
+                            onAplicar = { viewModel.ejecutarCambiosReales() },
+                            onDescartar = { viewModel.manejarVolver() }                        )
+                    } else {
+                        // El Editor Visual
+                        VistaEdicion(
+                            uri = state.fotoActual!!.uri,
+                            rotacion = state.fotoActual!!.rotacion,
+                            fotosRestantes = state.fotosRestantes,
+                            versionCache = state.versionCache,
+                            onRotar = { d -> viewModel.actualizarRotacion(d) },
+                            onDecidir = { d -> viewModel.tomarDecision(d) }
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+
+
+// --- PANTALLA RESUMEN (Extraída para limpieza) ---
+@Composable
+fun PantallaResumen(
+    resumen: String,
+    onAplicar: () -> Unit,
+    onDescartar: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("¡Misión Cumplida!", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+
+        Text(
+            text = resumen,
+            color = Color.LightGray,
+            modifier = Modifier.padding(24.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onAplicar,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+        ) {
+            Text("APLICAR CAMBIOS (Real)")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(onClick = onDescartar) {
+            Text("Descartar y Salir")
         }
     }
 }

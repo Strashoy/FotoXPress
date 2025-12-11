@@ -1,10 +1,10 @@
 package com.rolesencia.fotoxpress.ui
 
-import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.rolesencia.fotoxpress.data.model.Carpeta // Asegúrate de importar esto
+import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.data.model.Decision
 import com.rolesencia.fotoxpress.data.model.FotoEstado
 import com.rolesencia.fotoxpress.data.repository.FotoRepository
@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 
 class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
@@ -23,24 +25,37 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     // Guardar ID de la sesión actual
     private var currentSesionId: Long? = null
 
-    // ESTADO DE LA UI
+    // --- NUEVO: ESTADO DE NAVEGACIÓN ---
+    enum class VistaActual { CARPETAS, GALERIA, EDITOR }
+
+    private val _vistaActual = MutableStateFlow(VistaActual.CARPETAS)
+    val vistaActual: StateFlow<VistaActual> = _vistaActual.asStateFlow()
+
+    // --- NUEVO: ESTADO DE SELECCIÓN ---
+    private val _fotosSeleccionadas = MutableStateFlow<Set<Uri>>(emptySet())
+    val fotosSeleccionadas: StateFlow<Set<Uri>> = _fotosSeleccionadas.asStateFlow()
+
+    // Para el rango (Shift+Click lógico)
+    private var ultimaUriSeleccionada: Uri? = null
+
+    // ESTADO DE LA UI GENERAL
     data class UiState(
-        val mostrandoCarpetas: Boolean = true, // ¿Estamos eligiendo carpeta?
-        val listaCarpetas: List<Carpeta> = emptyList(), // La lista para mostrar
+        val mostrandoCarpetas: Boolean = true, // (Se mantiene por compatibilidad, pero usaremos vistaActual)
+        val listaCarpetas: List<Carpeta> = emptyList(),
         val fotoActual: FotoEstado? = null,
         val isLoading: Boolean = true,
         val fotosRestantes: Int = 0,
         val totalFotos: Int = 0,
-        val solicitudPermiso: android.content.IntentSender? = null, // EL POPUP
-        val tipoAccionPendiente: String? = null, // "BORRAR" o "EDITAR"
-        val versionCache: Long = System.currentTimeMillis() // Firma de tiempo
+        val solicitudPermiso: android.content.IntentSender? = null,
+        val tipoAccionPendiente: String? = null,
+        val versionCache: Long = System.currentTimeMillis()
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
-        cargarCarpetas() // Al iniciar, cargamos carpetas, NO fotos
+        cargarCarpetas()
     }
 
     // LÓGICA 1: Cargar la lista de carpetas
@@ -52,56 +67,151 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 listaCarpetas = carpetas,
-                versionCache = System.currentTimeMillis() // Ve la versión
+                versionCache = System.currentTimeMillis()
             )
+            // Aseguramos que la vista sea carpetas
+            _vistaActual.value = VistaActual.CARPETAS
         }
     }
 
-    // LÓGICA 2: El usuario eligió una carpeta -> Cargar sus fotos
-    fun seleccionarCarpeta(bucketId: String) {
+    // --- NUEVA LÓGICA DE NAVEGACIÓN ---
+
+    // Paso 1: Abrir carpeta -> Ver Galería (Antes esto iba directo al editor)
+    fun abrirCarpetaEnGaleria(bucketId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isLoading = true, mostrandoCarpetas = false)
+            _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // PASO A: Obtenemos las URIs crudas del dispositivo (usando tu método viejo)
-            // Nota: Asumo que 'obtenerFotosDeDispositivo' devuelve List<FotoEstado>.
-            // Si devuelve otra cosa, ajusta el map.
-            val fotosOriginales = repository.obtenerFotosDeDispositivo(bucketId)
-            val uris = fotosOriginales.map { it.uri }
+            // Cargamos todas las fotos de esa carpeta (Crudas del dispositivo)
+            val fotos = repository.obtenerFotosDeDispositivo(bucketId)
+            listaMaestraFotos = fotos.toMutableList()
 
-            if (uris.isNotEmpty()) {
-                // PASO B (NUEVO): Creamos la Sesión en la Base de Datos
-                val nombreSesion = "Sesión ${System.currentTimeMillis()}" // Puedes mejorar el nombre luego
-                val idSesion = repository.crearNuevaSesion(nombreSesion, uris)
+            // Limpiamos selección previa
+            _fotosSeleccionadas.value = emptySet()
+            ultimaUriSeleccionada = null
+
+            // Cambiamos de vista
+            _vistaActual.value = VistaActual.GALERIA
+
+            // Actualizamos UI (quitamos loading)
+            _uiState.value = _uiState.value.copy(isLoading = false, mostrandoCarpetas = false)
+        }
+    }
+
+    // Para exponer la lista a la Galería (que no necesita fotoActual todavía)
+    fun obtenerListaActual(): List<FotoEstado> = listaMaestraFotos
+
+    // --- NUEVA LÓGICA DE SELECCIÓN ---
+
+    fun toggleSeleccion(foto: FotoEstado) {
+        val seleccionActual = _fotosSeleccionadas.value.toMutableSet()
+        if (seleccionActual.contains(foto.uri)) {
+            seleccionActual.remove(foto.uri)
+            // Si al quitar esta foto, la lista queda vacía, reseteamos el ancla.
+            // Así el próximo click largo empezará de cero.
+            if (seleccionActual.isEmpty()) {
+                ultimaUriSeleccionada = null
+            }
+        } else {
+            seleccionActual.add(foto.uri)
+            ultimaUriSeleccionada = foto.uri // Marcamos nuevo ancla
+        }
+        _fotosSeleccionadas.value = seleccionActual
+    }
+
+    fun seleccionarRango(fotoDestino: FotoEstado) {
+        // Si no hay ancla (porque se limpió) O no hay nada seleccionado,
+        // tratamos el click largo como un "Empezar selección aquí".
+        val inicioUri = ultimaUriSeleccionada
+        if (inicioUri == null || _fotosSeleccionadas.value.isEmpty()) {
+            toggleSeleccion(fotoDestino)
+            return
+        }
+
+        // Buscamos posiciones
+        val indexInicio = listaMaestraFotos.indexOfFirst { it.uri == inicioUri }
+        val indexFin = listaMaestraFotos.indexOfFirst { it.uri == fotoDestino.uri }
+
+        if (indexInicio != -1 && indexFin != -1) {
+            val min = min(indexInicio, indexFin)
+            val max = max(indexInicio, indexFin)
+
+            val seleccionActual = _fotosSeleccionadas.value.toMutableSet()
+            // Agregamos todo el rango
+            for (i in min..max) {
+                seleccionActual.add(listaMaestraFotos[i].uri)
+            }
+            _fotosSeleccionadas.value = seleccionActual
+            ultimaUriSeleccionada = fotoDestino.uri
+        }
+    }
+
+    fun seleccionarTodo() {
+        // Simplemente mapeamos todas las URIs al set
+        _fotosSeleccionadas.value = listaMaestraFotos.map { it.uri }.toSet()
+        // El ancla queda en la última foto para permitir rangos inversos si quisieras
+        ultimaUriSeleccionada = listaMaestraFotos.lastOrNull()?.uri
+    }
+    fun limpiarSeleccion() {
+        _fotosSeleccionadas.value = emptySet()
+        ultimaUriSeleccionada = null
+    }
+
+    // Paso 2: Confirmar selección -> Crear Sesión DB -> Ir al Editor
+    fun confirmarSeleccionYCrearSesion() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val seleccion = _fotosSeleccionadas.value.toList()
+            if (seleccion.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+
+                // 1. Crear sesión en DB
+                val nombreSesion = "Sesión ${System.currentTimeMillis()}"
+                val idSesion = repository.crearNuevaSesion(nombreSesion, seleccion)
                 currentSesionId = idSesion
 
-                // PASO C (NUEVO): Ahora cargamos las fotos DESDE LA BASE DE DATOS (Entities -> Models)
+                // 2. Cargar fotos DESDE LA DB (Ahora trabajamos con la sesión)
                 listaMaestraFotos = repository.cargarFotosDeSesion(idSesion).toMutableList()
-
                 indiceActual = 0
+
+                // 3. Cambiar a vista Editor
+                _vistaActual.value = VistaActual.EDITOR
                 actualizarFotoVisible()
-            } else {
-                _uiState.value = _uiState.value.copy(isLoading = false, fotoActual = null)
             }
         }
     }
 
-    // Para el botón "Volver"
-    fun volverASeleccion() {
-        currentSesionId = null // Limpiamos la sesión al salir
-        cargarCarpetas()
+    // Botón Volver (Maneja la navegación hacia atrás)
+    fun manejarVolver() {
+        when (_vistaActual.value) {
+            VistaActual.EDITOR -> {
+                // Salimos del editor, volvemos a la galería de esa carpeta
+                // (Opcional: aquí podrías recargar las fotos crudas si quisieras actualizar cambios)
+                _vistaActual.value = VistaActual.GALERIA
+                _uiState.value = _uiState.value.copy(fotoActual = null)
+            }
+            VistaActual.GALERIA -> {
+                if (_fotosSeleccionadas.value.isNotEmpty()) {
+                    limpiarSeleccion()
+                } else {
+                    _vistaActual.value = VistaActual.CARPETAS
+                    cargarCarpetas() // Recargamos lista de carpetas
+                }
+            }
+            VistaActual.CARPETAS -> {
+                // Aquí la UI debería delegar al sistema para cerrar la app
+            }
+        }
     }
 
-    // --- EDICIÓN CON PERSISTENCIA INSTANTÁNEA (Entretiempo) ---
+    // --- LÓGICA DE EDICIÓN (EXISTENTE) ---
+
     fun actualizarRotacion(deltaRotacion: Float) {
         val foto = _uiState.value.fotoActual ?: return
         val nuevaRotacion = foto.rotacion + deltaRotacion
         val fotoActualizada = foto.copy(rotacion = nuevaRotacion)
 
-        // 1. Actualizamos UI (Rápido)
         listaMaestraFotos[indiceActual] = fotoActualizada
         _uiState.value = _uiState.value.copy(fotoActual = fotoActualizada)
 
-        // 2. Actualizamos DB (Persistencia)
         viewModelScope.launch(Dispatchers.IO) {
             repository.actualizarEstadoFoto(foto.id, fotoActualizada.rotacion, fotoActualizada.decision)
         }
@@ -111,10 +221,8 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         val foto = _uiState.value.fotoActual ?: return
         val fotoDecidida = foto.copy(decision = decision)
 
-        // 1. Actualizamos UI
         listaMaestraFotos[indiceActual] = fotoDecidida
 
-        // 2. NUEVO: Actualizamos DB
         viewModelScope.launch(Dispatchers.IO) {
             repository.actualizarEstadoFoto(foto.id, fotoDecidida.rotacion, fotoDecidida.decision)
         }
@@ -123,6 +231,7 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
             indiceActual++
             actualizarFotoVisible()
         } else {
+            // Fin de la lista en el editor
             _uiState.value = _uiState.value.copy(fotoActual = null, isLoading = false)
         }
     }
@@ -134,7 +243,7 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
             isLoading = false,
             fotosRestantes = listaMaestraFotos.size - indiceActual,
             totalFotos = listaMaestraFotos.size,
-            mostrandoCarpetas = false // Aseguramos que no muestre carpetas
+            mostrandoCarpetas = false
         )
     }
 
@@ -146,39 +255,32 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         return "Resumen:\n🗑️ Se borrarán: $aBorrar fotos\n🔄 Se editarán: $aEditar fotos\n✅ Se dejan igual: $aIgnorar fotos"
     }
 
-    // FASE 1: Intentamos borrar primero
-    // Nota: Aquí leemos de 'listaMaestraFotos', que está sincronizada con la DB, así que es seguro.
+    // --- FASES DE GUARDADO (EXISTENTE) ---
+
     fun ejecutarCambiosReales() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // 1. Filtramos qué fotos hay que borrar
             val fotosParaBorrar = listaMaestraFotos.filter { it.decision == Decision.ELIMINAR }
 
             if (fotosParaBorrar.isNotEmpty()) {
                 val uris = fotosParaBorrar.map { it.uri }
-                // Pedimos el Intent al repo
                 val intentSender = repository.generarPermisoBorrado(uris)
 
                 if (intentSender != null) {
-                    // ¡ALTO! Necesitamos permiso. Le decimos a la UI que muestre el popup.
                     _uiState.value = _uiState.value.copy(
                         solicitudPermiso = intentSender,
                         tipoAccionPendiente = "BORRAR"
                     )
-                    return@launch // Pausamos aquí hasta que el usuario responda
+                    return@launch
                 } else {
-                    // Si es Android 9 o inferior, borramos directo
                     fotosParaBorrar.forEach { repository.eliminarFoto(it.uri) }
                 }
             }
-
-            // Si no había nada que borrar (o ya se borró), pasamos a Fase 2
             procesarEdiciones()
         }
     }
 
-    // FASE 2: Procesar ediciones (Rotación)
     private fun procesarEdiciones() {
         viewModelScope.launch(Dispatchers.IO) {
             val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
@@ -199,41 +301,30 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
                     }
                 }
             }
-            finalizarProceso() // Cache busting y recarga
+            finalizarProceso()
         }
     }
 
-    // FASE 3: Callback (Cuando el usuario dice "SÍ" en el popup)
     fun onPermisoOtorgado() {
-        // El usuario dijo SI en el popup.
-        // Limpiamos el popup del estado
         val accion = _uiState.value.tipoAccionPendiente
         _uiState.value = _uiState.value.copy(solicitudPermiso = null, tipoAccionPendiente = null)
 
         viewModelScope.launch(Dispatchers.IO) {
             if (accion == "BORRAR") {
-                // En Android 11, al aceptar el popup, EL SISTEMA YA BORRÓ LAS FOTOS.
-                // No necesitamos llamar a repository.eliminarFoto() de nuevo.
-                // Pasamos directo a editar.
                 procesarEdiciones()
             } else if (accion == "EDITAR") {
-                // Ejecutamos la edición real con recorte.
                 val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
-
                 fotosParaEditar.forEach { foto ->
                     aplicarEdicionConRecorte(foto)
                 }
-
                 finalizarProceso()
             }
         }
     }
 
     private fun finalizarProceso() {
-        // Al finalizar, podríamos borrar la sesión de la DB si quisiéramos
-        // repository.eliminarSesion(currentSesionId) <- Pendiente para el futuro
-        // Recargamos y volvemos al inicio
         viewModelScope.launch(Dispatchers.IO) {
+            // Al terminar, volvemos a la lista de carpetas
             val carpetas = repository.obtenerCarpetasConFotos()
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -242,38 +333,25 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
                 listaCarpetas = carpetas,
                 versionCache = System.currentTimeMillis()
             )
+            _vistaActual.value = VistaActual.CARPETAS
         }
     }
 
     private fun aplicarEdicionConRecorte(foto: FotoEstado) {
         try {
-            // 1. Pedimos al repo que nos de el Bitmap original
-            // (Nota: Tendrás que asegurarte de tener esta función en el repo, ver abajo)
             val bitmapOriginal = repository.cargarBitmap(foto.uri) ?: return
-
-            // 2. Usamos tu nuevo ImageProcessor para rotar Y recortar (Auto-Crop)
             val bitmapEditado = ImageProcessor.aplicarEdicion(
                 original = bitmapOriginal,
                 grados = foto.rotacion
-                // scaleUsuario = foto.scaleUsuario // Descomenta si decidiste guardar el zoom manual también
             )
-
-            // 3. Guardamos el resultado sobrescribiendo el archivo
             repository.sobrescribirImagen(foto.uri, bitmapEditado)
-
-            // 4. Limpieza de memoria
             if (bitmapOriginal != bitmapEditado) bitmapOriginal.recycle()
-            // bitmapEditado se recicla solo o al salir, pero cuidado con la memoria aquí.
-
         } catch (e: Exception) {
             e.printStackTrace()
-            // Manejar error (opcional)
         }
     }
 
-    // --- CLASE FACTORY (NECESARIA PARA INYECTAR DEPENDENCIAS) ---
-// Copia esto al final del archivo FotoViewModel.kt
-
+    // FACTORY
     class FotoViewModelFactory(private val repository: FotoRepository) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(FotoViewModel::class.java)) {
@@ -284,4 +362,3 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         }
     }
 }
-
