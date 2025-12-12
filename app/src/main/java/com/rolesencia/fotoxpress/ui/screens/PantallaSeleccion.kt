@@ -198,25 +198,33 @@ fun PantallaSeleccion() {
                     }
                 }
 
-                // PANTALLA 3: EDITOR (Lo que ya tenías)
+                // PANTALLA 3: EDITOR
                 FotoViewModel.VistaActual.EDITOR -> {
-                    if (state.isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                    } else if (state.fotoActual == null) {
-                        // Pantalla de Resumen / Fin
+                    // CAMBIO DE ORDEN LÓGICO:
+                    // 1. Primero chequeamos si estamos en modo RESUMEN (fotoActual es null).
+                    //    ¿Por qué? Porque PantallaResumen sabe manejar su propio isLoading
+                    //    con la barra de progreso lineal.
+                    if (state.fotoActual == null) {
                         PantallaResumen(
                             resumen = viewModel.obtenerResumen(),
-                            isLoading = state.isLoading,
+                            isLoading = state.isLoading, // Le pasamos el estado de carga
                             progreso = state.progreso,
                             mensajeProgreso = state.mensajeProgreso,
-                            onAplicar = { viewModel.ejecutarCambiosReales() },
-                            onDescartar = { viewModel.manejarVolver() },
                             modo = state.modoExportacion,
                             carpeta = state.nombreCarpetaDestino,
                             onCambiarModo = { viewModel.setModoExportacion(it) },
-                            onCambiarCarpeta = { viewModel.setNombreCarpetaDestino(it) },)
-                    } else {
-                        // El Editor Visual
+                            onCambiarCarpeta = { viewModel.setNombreCarpetaDestino(it) },
+                            onAplicar = { viewModel.ejecutarCambiosReales() },
+                            onDescartar = { viewModel.manejarVolver() }
+                        )
+                    }
+                    // 2. Si NO es resumen, y está cargando, entonces sí usamos el círculo genérico
+                    //    (ej: cargando la primera foto al abrir la sesión)
+                    else if (state.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    // 3. Si no carga y hay foto, mostramos el Editor
+                    else {
                         VistaEdicion(
                             uri = state.fotoActual!!.uri,
                             rotacion = state.fotoActual!!.rotacion,
