@@ -17,12 +17,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rolesencia.fotoxpress.data.local.entity.SesionEntity
+import com.rolesencia.fotoxpress.data.local.model.SesionConProgreso
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun PantallaInicio(
-    sesiones: List<SesionEntity>,
+    sesiones: List<SesionConProgreso>,
     onNuevaSesion: () -> Unit,
     onRetomarSesion: (Long) -> Unit,
     onBorrarSesion: (Long) -> Unit
@@ -71,8 +72,8 @@ fun PantallaInicio(
                     // Esto permite que el último item suba más allá del botón flotante.
                     contentPadding = PaddingValues(bottom = 100.dp)
                 ) {
-                    items(sesiones, key = { it.id }) { sesion ->
-                        ItemSesion(sesion, onRetomarSesion, onBorrarSesion)
+                    items(sesiones, key = { it.sesion.id }) { item ->
+                        ItemSesion(item, onRetomarSesion, onBorrarSesion)
                     }
                 }
             }
@@ -82,31 +83,61 @@ fun PantallaInicio(
 
 @Composable
 fun ItemSesion(
-    sesion: SesionEntity,
+    item: SesionConProgreso,
     onClick: (Long) -> Unit,
     onDelete: (Long) -> Unit
 ) {
+    val sesion = item.sesion
     val fecha = remember(sesion.fechaCreacion) {
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(sesion.fechaCreacion))
     }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.DarkGray),
-        modifier = Modifier.fillMaxWidth().clickable { onClick(sesion.id) }
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick(sesion.id) }
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(sesion.nombre, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                // TITULO
+                Text(
+                    text = sesion.nombre,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Creada: $fecha", color = Color.LightGray, fontSize = 12.sp)
-                Text("${sesion.cantidadFotos} fotos", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+
+                // FECHA (Gris sutil)
+                Text(
+                    text = "Creada: $fecha",
+                    color = Color.LightGray.copy(alpha = 0.7f),
+                    fontSize = 12.sp
+                )
+
+                Spacer(modifier = Modifier.height(4.dp)) // Espacio para separar
+
+                // PROGRESO (Blanco y destacado)
+                Text(
+                    text = "Progreso: ${item.fotosEditadas} de ${sesion.cantidadFotos}",
+                    color = Color.White, // Ahora se ve perfecto
+                    fontWeight = FontWeight.Medium, // Un poco más gordita la letra
+                    fontSize = 14.sp
+                )
             }
 
+            // BOTÓN BORRAR
             IconButton(onClick = { onDelete(sesion.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color.Gray)
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Borrar",
+                    tint = Color.Gray
+                )
             }
         }
     }

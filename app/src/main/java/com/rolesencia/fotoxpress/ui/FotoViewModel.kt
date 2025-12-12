@@ -53,7 +53,9 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         val totalFotos: Int = 0,
         val solicitudPermiso: android.content.IntentSender? = null,
         val tipoAccionPendiente: String? = null,
-        val versionCache: Long = System.currentTimeMillis()
+        val versionCache: Long = System.currentTimeMillis(),
+        val progreso: Float = 0f, // De 0.0 a 1.0
+        val mensajeProgreso: String = "" // Ej: "Guardando 3 de 10..."
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -290,8 +292,10 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     private fun procesarEdiciones() {
         viewModelScope.launch(Dispatchers.IO) {
             val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
+            val total = fotosParaEditar.size
 
-            if (fotosParaEditar.isNotEmpty()) {
+            if (total > 0) {
+                // Verificar permiso primero...
                 val uris = fotosParaEditar.map { it.uri }
                 val intentSender = repository.generarPermisoEscritura(uris)
 
@@ -302,7 +306,16 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
                     )
                     return@launch
                 } else {
+                    // --- BUCLE CON PROGRESO ---
+                    var procesadas = 0
                     fotosParaEditar.forEach { foto ->
+                        procesadas++
+                        // Actualizamos UI
+                        _uiState.value = _uiState.value.copy(
+                            progreso = procesadas.toFloat() / total.toFloat(),
+                            mensajeProgreso = "Procesando $procesadas de $total..."
+                        )
+
                         aplicarEdicionConRecorte(foto)
                     }
                 }
@@ -330,16 +343,20 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
     private fun finalizarProceso() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Al terminar, volvemos a la lista de carpetas
-            val carpetas = repository.obtenerCarpetasConFotos()
+            // 1. Borramos la sesión de la DB (Limpieza)
+            currentSesionId?.let { id ->
+                repository.eliminarSesion(id)
+            }
+            currentSesionId = null
+
+            // 2. Volvemos al Dashboard (INICIO)
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 fotoActual = null,
-                mostrandoCarpetas = true,
-                listaCarpetas = carpetas,
-                versionCache = System.currentTimeMillis()
+                progreso = 0f, // Reset
+                mensajeProgreso = ""
             )
-            _vistaActual.value = VistaActual.CARPETAS
+            _vistaActual.value = VistaActual.INICIO
         }
     }
 
@@ -372,12 +389,17 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // 1. Cargamos las fotos DESDE LA DB (No del disco)
+            // 1. Cargamos las fotos
             listaMaestraFotos = repository.cargarFotosDeSesion(sesionId).toMutableList()
             currentSesionId = sesionId
-            indiceActual = 0 // O podrías guardar el índice en la DB para volver exacto donde estabas
 
-            // 2. Directo al Editor
+            // 2. LÓGICA DE RE-INGRESO: Buscamos la primera que sea PENDIENTE
+            val primerPendiente = listaMaestraFotos.indexOfFirst { it.decision == Decision.PENDIENTE }
+
+            // Si devuelve -1 (todo editado), vamos al principio (0). Si no, vamos a esa foto.
+            indiceActual = if (primerPendiente != -1) primerPendiente else 0
+
+            // 3. Directo al Editor
             _uiState.value = _uiState.value.copy(isLoading = false, fotoActual = null)
             actualizarFotoVisible()
             _vistaActual.value = VistaActual.EDITOR
@@ -394,5 +416,21 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         // Esto hace lo que hacía antes el 'init': va a elegir carpetas
         cargarCarpetas()
         _vistaActual.value = VistaActual.CARPETAS
+    }
+
+    fun onPermisoDenegado() {
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            solicitudPermiso = null,
+            tipoAccionPendiente = null,
+            mensajeProgreso = "Permiso denegado. No se pudieron aplicar los cambios."
+        )
+    }
+
+    fun pausarSesion() {
+        // Simplemente nos vamos al inicio.
+        // Room ya guardó todo en tiempo real, no hace falta "guardar" nada extra.
+        _vistaActual.value = VistaActual.INICIO
+        _uiState.value = _uiState.value.copy(fotoActual = null)
     }
 }

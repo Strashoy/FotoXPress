@@ -6,13 +6,14 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.rolesencia.fotoxpress.data.local.entity.FotoEntity
 import com.rolesencia.fotoxpress.data.local.entity.SesionEntity
+import com.rolesencia.fotoxpress.data.local.model.SesionConProgreso
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SesionDao {
     // --- SESIONES ---
-    @Query("SELECT * FROM sesiones ORDER BY fechaCreacion DESC")
-    fun obtenerTodasLasSesiones(): Flow<List<SesionEntity>> // Flow avisa a la UI si hay cambios
+    @Query("SELECT s.*, (SELECT COUNT(*) FROM fotos_sesion f WHERE f.sesionId = s.id AND f.decision != 'PENDIENTE') as fotosEditadas FROM sesiones s ORDER BY s.fechaCreacion DESC")
+    fun obtenerSesionesConProgreso(): Flow<List<SesionConProgreso>>
 
     @Insert
     suspend fun crearSesion(sesion: SesionEntity): Long // Devuelve el ID de la nueva sesión

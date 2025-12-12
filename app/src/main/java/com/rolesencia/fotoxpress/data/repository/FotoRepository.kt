@@ -10,6 +10,7 @@ import com.rolesencia.fotoxpress.data.model.Carpeta
 import com.rolesencia.fotoxpress.data.model.FotoEstado
 import com.rolesencia.fotoxpress.data.local.entity.FotoEntity
 import com.rolesencia.fotoxpress.data.local.entity.SesionEntity
+import com.rolesencia.fotoxpress.data.local.model.SesionConProgreso
 import com.rolesencia.fotoxpress.data.model.Decision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -238,8 +239,8 @@ class FotoRepository(
 
     // --- DASHBOARD ---
     // Usamos Flow para que la lista se actualice sola si borramos una sesión
-    fun obtenerSesionesActivas(): kotlinx.coroutines.flow.Flow<List<SesionEntity>> {
-        return sesionDao.obtenerTodasLasSesiones()
+    fun obtenerSesionesActivas(): kotlinx.coroutines.flow.Flow<List<SesionConProgreso>> {
+        return sesionDao.obtenerSesionesConProgreso()
     }
 
     // Borrar una sesión (el "tacho de basura" del dashboard)

@@ -64,6 +64,7 @@ import com.rolesencia.fotoxpress.ui.FotoViewModel
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.material.icons.filled.Home
 import com.rolesencia.fotoxpress.ui.screens.PantallaGaleriaSeleccion
 
 @Composable
@@ -120,8 +121,8 @@ fun PantallaSeleccion() {
             // ¡EL USUARIO DIJO QUE SÍ!
             viewModel.onPermisoOtorgado()
         } else {
-            // El usuario dijo que no o canceló. Podrías mostrar un mensaje de error.
-        }
+            // Si el usuario cancela, avisamos al VM para quitar el loading
+            viewModel.onPermisoDenegado()        }
     }
 
     // EFECTO: Vigila si el ViewModel pide permiso
@@ -204,8 +205,11 @@ fun PantallaSeleccion() {
                         // Pantalla de Resumen / Fin
                         PantallaResumen(
                             resumen = viewModel.obtenerResumen(),
+                            isLoading = state.isLoading,
+                            progreso = state.progreso,
+                            mensajeProgreso = state.mensajeProgreso,
                             onAplicar = { viewModel.ejecutarCambiosReales() },
-                            onDescartar = { viewModel.manejarVolver() }                        )
+                            onDescartar = { viewModel.manejarVolver() }                      )
                     } else {
                         // El Editor Visual
                         VistaEdicion(
@@ -213,6 +217,7 @@ fun PantallaSeleccion() {
                             rotacion = state.fotoActual!!.rotacion,
                             fotosRestantes = state.fotosRestantes,
                             versionCache = state.versionCache,
+                            onPausar = { viewModel.pausarSesion() },
                             onRotar = { d -> viewModel.actualizarRotacion(d) },
                             onDecidir = { d -> viewModel.tomarDecision(d) }
                         )
@@ -229,35 +234,68 @@ fun PantallaSeleccion() {
 @Composable
 fun PantallaResumen(
     resumen: String,
+    isLoading: Boolean,        // Recibimos estado de carga
+    progreso: Float,           // Recibimos 0.0 a 1.0
+    mensajeProgreso: String,   // Recibimos texto
     onAplicar: () -> Unit,
     onDescartar: () -> Unit
 ) {
+    // EL CONTENEDOR PRINCIPAL
     Column(
         modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally, // Centrado Horizontal
+        verticalArrangement = Arrangement.Center // Centrado Vertical
     ) {
-        Text("¡Misión Cumplida!", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        if (isLoading) {
+            // --- MODO PROCESANDO ---
+            Text(
+                "Aplicando cambios...",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = resumen,
-            color = Color.LightGray,
-            modifier = Modifier.padding(24.dp)
-        )
+            // Barra de Progreso Lineal
+            LinearProgressIndicator(
+                progress = { progreso },
+                modifier = Modifier.width(200.dp).height(8.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.DarkGray,
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = mensajeProgreso, color = Color.LightGray)
 
-        Button(
-            onClick = onAplicar,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-        ) {
-            Text("APLICAR CAMBIOS (Real)")
-        }
+        } else {
+            // --- MODO RESUMEN (Antes de aplicar) ---
+            Text(
+                "¡Misión Cumplida!",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = resumen,
+                color = Color.LightGray,
+                modifier = Modifier.padding(24.dp)
+            )
 
-        OutlinedButton(onClick = onDescartar) {
-            Text("Descartar y Salir")
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onAplicar,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+            ) {
+                Text("APLICAR CAMBIOS")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(onClick = onDescartar) {
+                Text("Descartar y Salir")
+            }
         }
     }
 }
@@ -268,6 +306,7 @@ fun VistaEdicion(
     rotacion: Float,
     fotosRestantes: Int,
     versionCache: Long, // Recibimos el dato
+    onPausar: () -> Unit,
     onRotar: (Float) -> Unit,
     onDecidir: (Decision) -> Unit
 ) {
@@ -458,6 +497,21 @@ fun VistaEdicion(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
+            }
+
+            // --- NUEVO: BOTÓN HOME (FLOTANTE ARRIBA) ---
+            IconButton(
+                onClick = onPausar,
+                modifier = Modifier
+                    .align(Alignment.TopStart) // Arriba a la izquierda
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Home, // Asegúrate de importar Icons.Default.Home
+                    contentDescription = "Pausar y Salir",
+                    tint = Color.White
+                )
             }
 
             // Contador
