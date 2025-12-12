@@ -253,4 +253,72 @@ class FotoRepository(
         // Convertimos a Set para búsqueda instantánea O(1)
         return sesionDao.obtenerTodasLasUrisUsadas().toSet()
     }
+
+    // --- EXPORTACIÓN AVANZADA ---
+
+    // Guarda una copia en una carpeta específica
+    suspend fun guardarImagenEnGaleria(
+        bitmap: android.graphics.Bitmap,
+        nombreOriginal: String,
+        nombreCarpetaDestino: String
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val nombreLimpio = java.io.File(nombreOriginal).nameWithoutExtension
+                val filename = "Edit_${System.currentTimeMillis()}.jpg" // Nombre simple para evitar caracteres raros
+
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+
+                    // TRUCO 1: Usar DCIM para máxima compatibilidad con Galerías
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/$nombreCarpetaDestino")
+                        put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                }
+
+                val uriNueva = context.contentResolver.insert(
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ) ?: return@withContext false
+
+                context.contentResolver.openOutputStream(uriNueva)?.use { stream ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, stream)
+                }
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                    context.contentResolver.update(uriNueva, contentValues, null, null)
+                }
+
+                // TRUCO 2: Forzar escaneo para Realme/Xiaomi (ScanFile)
+                // Esto le "grita" a la galería que hay un archivo nuevo
+                android.media.MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(java.io.File(getPathFromUri(uriNueva) ?: "").absolutePath),
+                    arrayOf("image/jpeg"),
+                    null
+                )
+
+                return@withContext true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return@withContext false
+            }
+        }
+    }
+
+    // Helper pequeño para obtener path (necesario para el escaneo manual)
+    private fun getPathFromUri(uri: android.net.Uri): String? {
+        val projection = arrayOf(android.provider.MediaStore.Images.Media.DATA)
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val columnIndex = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Images.Media.DATA)
+                return cursor.getString(columnIndex)
+            }
+        }
+        return null
+    }
 }

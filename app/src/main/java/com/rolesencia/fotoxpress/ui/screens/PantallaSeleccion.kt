@@ -210,7 +210,11 @@ fun PantallaSeleccion() {
                             progreso = state.progreso,
                             mensajeProgreso = state.mensajeProgreso,
                             onAplicar = { viewModel.ejecutarCambiosReales() },
-                            onDescartar = { viewModel.manejarVolver() }                      )
+                            onDescartar = { viewModel.manejarVolver() },
+                            modo = state.modoExportacion,
+                            carpeta = state.nombreCarpetaDestino,
+                            onCambiarModo = { viewModel.setModoExportacion(it) },
+                            onCambiarCarpeta = { viewModel.setNombreCarpetaDestino(it) },)
                     } else {
                         // El Editor Visual
                         VistaEdicion(
@@ -239,13 +243,19 @@ fun PantallaResumen(
     progreso: Float,           // Recibimos 0.0 a 1.0
     mensajeProgreso: String,   // Recibimos texto
     onAplicar: () -> Unit,
-    onDescartar: () -> Unit
+    onDescartar: () -> Unit,
+    modo: FotoViewModel.ModoExportacion,
+    carpeta: String,
+    onCambiarModo: (FotoViewModel.ModoExportacion) -> Unit,
+    onCambiarCarpeta: (String) -> Unit,
 ) {
     // EL CONTENEDOR PRINCIPAL
     Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally, // Centrado Horizontal
-        verticalArrangement = Arrangement.Center // Centrado Vertical
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp), // Un poco de margen general
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         if (isLoading) {
             // --- MODO PROCESANDO ---
@@ -269,19 +279,71 @@ fun PantallaResumen(
             Text(text = mensajeProgreso, color = Color.LightGray)
 
         } else {
-            // --- MODO RESUMEN (Antes de aplicar) ---
-            Text(
-                "¡Misión Cumplida!",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Configuración de Exportación", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
-            Text(
-                text = resumen,
-                color = Color.LightGray,
-                modifier = Modifier.padding(24.dp)
-            )
+            // TARJETA DE OPCIONES
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.DarkGray),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Destino de archivos:", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // OPCIÓN 1: SOBRESCRIBIR
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = modo == FotoViewModel.ModoExportacion.SOBRESCRIBIR,
+                            onClick = { onCambiarModo(FotoViewModel.ModoExportacion.SOBRESCRIBIR) },
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary, unselectedColor = Color.LightGray)
+                        )
+                        Text("Sobrescribir originales", color = Color.White, fontSize = 14.sp)
+                    }
+
+                    // OPCIÓN 2: COPIAR
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = modo == FotoViewModel.ModoExportacion.COPIAR,
+                            onClick = { onCambiarModo(FotoViewModel.ModoExportacion.COPIAR) },
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary, unselectedColor = Color.LightGray)
+                        )
+                        Text("Copiar a carpeta nueva", color = Color.White, fontSize = 14.sp)
+                    }
+
+                    // INPUT DE NOMBRE (Solo si es COPIAR)
+                    // CORRECCIÓN: Usamos '==' porque SOLO queremos verlo al copiar
+                    if (modo == FotoViewModel.ModoExportacion.COPIAR) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = carpeta,
+                            onValueChange = onCambiarCarpeta,
+                            label = { Text("Carpeta (Nueva o Existente)") },
+                            placeholder = { Text("Ej: Selección Final") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            // Colores para modo oscuro
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.LightGray,
+                                cursorColor = Color.White,
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = Color.LightGray
+                            )
+                        )
+
+                        // TEXTO DE AYUDA
+                        Text(
+                            text = "* Si la carpeta ya existe, las fotos se agregarán dentro.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -518,23 +580,33 @@ fun VistaEdicion(
             IconButton(
                 onClick = onPausar,
                 modifier = Modifier
-                    .align(Alignment.TopStart) // Arriba a la izquierda
-                    .padding(16.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Home, // Asegúrate de importar Icons.Default.Home
-                    contentDescription = "Pausar y Salir",
-                    tint = Color.White
+                    .align(Alignment.TopStart)
+                    .padding(16.dp),
+                // Color sólido DarkGray (igual que el panel de abajo)
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = Color.DarkGray,
+                    contentColor = Color.White
                 )
+            ) {
+                Icon(Icons.Default.Home, contentDescription = "Pausar")
             }
 
             // Contador
-            Text(
-                text = "Faltan: $fotosRestantes",
-                color = Color.White.copy(alpha = 0.5f),
-                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-            )
+            Surface(
+                color = Color.DarkGray, // Color sólido
+                shape = CircleShape,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Faltan: $fotosRestantes",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
         }
 
         // --- ZONA B: CONTROL DE PRECISIÓN (20%) ---

@@ -47,6 +47,9 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     // Para el rango (Shift+Click lógico)
     private var ultimaUriSeleccionada: Uri? = null
 
+    // Enum auxiliar (puedes ponerlo fuera de la clase o dentro)
+    enum class ModoExportacion { SOBRESCRIBIR, COPIAR }
+
     // ESTADO DE LA UI GENERAL
     data class UiState(
         val mostrandoCarpetas: Boolean = true, // (Se mantiene por compatibilidad, pero usaremos vistaActual)
@@ -59,11 +62,16 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         val tipoAccionPendiente: String? = null,
         val versionCache: Long = System.currentTimeMillis(),
         val progreso: Float = 0f, // De 0.0 a 1.0
-        val mensajeProgreso: String = "" // Ej: "Guardando 3 de 10..."
+        val mensajeProgreso: String = "", // Ej: "Guardando 3 de 10..."
+        val modoExportacion: ModoExportacion = ModoExportacion.SOBRESCRIBIR,
+        val nombreCarpetaDestino: String = "",
+        val mostrarOpcionesExportacion: Boolean = false // Para expandir/colapsar el menú
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+
 
     // LÓGICA 1: Cargar la lista de carpetas
     fun cargarCarpetas() {
@@ -295,12 +303,26 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
 
     private fun procesarEdiciones() {
         viewModelScope.launch(Dispatchers.IO) {
-            val fotosParaEditar = listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
-            val total = fotosParaEditar.size
+            val modo = _uiState.value.modoExportacion
 
-            if (total > 0) {
-                // Verificar permiso primero...
-                val uris = fotosParaEditar.map { it.uri }
+            // FILTRADO:
+            // Si es SOBRESCRIBIR: Solo las que rotamos (para no tocar las que están bien).
+            // Si es COPIAR: Todas las que decidimos CONSERVAR (para llevar el lote completo).
+            val fotosAProcesar = if (modo == ModoExportacion.SOBRESCRIBIR) {
+                listaMaestraFotos.filter { it.decision == Decision.CONSERVAR && it.rotacion != 0f }
+            } else {
+                listaMaestraFotos.filter { it.decision == Decision.CONSERVAR }
+            }
+
+            val total = fotosAProcesar.size
+            if (total == 0) {
+                finalizarProceso()
+                return@launch
+            }
+
+            // PERMISOS: Solo necesarios para SOBRESCRIBIR (Android protege el archivo original)
+            if (modo == ModoExportacion.SOBRESCRIBIR) {
+                val uris = fotosAProcesar.map { it.uri }
                 val intentSender = repository.generarPermisoEscritura(uris)
 
                 if (intentSender != null) {
@@ -309,19 +331,54 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
                         tipoAccionPendiente = "EDITAR"
                     )
                     return@launch
-                } else {
-                    // --- BUCLE CON PROGRESO ---
-                    var procesadas = 0
-                    fotosParaEditar.forEach { foto ->
-                        procesadas++
-                        // Actualizamos UI
-                        _uiState.value = _uiState.value.copy(
-                            progreso = procesadas.toFloat() / total.toFloat(),
-                            mensajeProgreso = "Procesando $procesadas de $total..."
-                        )
+                }
+            }
 
-                        aplicarEdicionConRecorte(foto)
+            // PROCESAMIENTO
+            var procesadas = 0
+            // Si el nombre está vacío, usamos uno por defecto
+            val carpetaDestino = _uiState.value.nombreCarpetaDestino.ifBlank { "FotoXPress_Export" }
+
+            fotosAProcesar.forEach { foto ->
+                procesadas++
+                _uiState.value = _uiState.value.copy(
+                    progreso = procesadas.toFloat() / total.toFloat(),
+                    mensajeProgreso = "Procesando $procesadas de $total..."
+                )
+
+                try {
+                    val bitmapOriginal = repository.cargarBitmap(foto.uri)
+
+                    if (bitmapOriginal != null) {
+                        // Rotamos si hace falta
+                        val bitmapFinal = if (foto.rotacion != 0f) {
+                            com.rolesencia.fotoxpress.utils.ImageUtils.rotarBitmap(bitmapOriginal, foto.rotacion)
+                        } else {
+                            bitmapOriginal
+                        }
+
+                        // GUARDADO
+                        when (modo) {
+                            ModoExportacion.SOBRESCRIBIR -> {
+                                repository.sobrescribirImagen(foto.uri, bitmapFinal)
+                            }
+                            ModoExportacion.COPIAR -> {
+                                // Usamos el nombre original para mantener orden
+                                val nombreArchivo = "Foto_$procesadas"
+
+                                repository.guardarImagenEnGaleria(
+                                    bitmapFinal,
+                                    nombreArchivo,
+                                    carpetaDestino
+                                )
+                            }
+                        }
+
+                        if (bitmapFinal != bitmapOriginal) bitmapFinal.recycle()
+                        bitmapOriginal.recycle()
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
             finalizarProceso()
@@ -436,5 +493,14 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         // Room ya guardó todo en tiempo real, no hace falta "guardar" nada extra.
         _vistaActual.value = VistaActual.INICIO
         _uiState.value = _uiState.value.copy(fotoActual = null)
+    }
+
+    // CONTROLAR LA UI
+    fun setModoExportacion(modo: ModoExportacion) {
+        _uiState.value = _uiState.value.copy(modoExportacion = modo)
+    }
+
+    fun setNombreCarpetaDestino(nombre: String) {
+        _uiState.value = _uiState.value.copy(nombreCarpetaDestino = nombre)
     }
 }
