@@ -30,6 +30,10 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     val listaSesiones = repository.obtenerSesionesActivas()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Lista de fotos que ya están en alguna sesión
+    private val _urisUsadas = MutableStateFlow<Set<String>>(emptySet())
+    val urisUsadas = _urisUsadas.asStateFlow()
+
     // --- NUEVO: ESTADO DE NAVEGACIÓN ---
     enum class VistaActual { INICIO, CARPETAS, GALERIA, EDITOR }
 
@@ -84,9 +88,12 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // Cargamos todas las fotos de esa carpeta (Crudas del dispositivo)
+            // 1. Cargar fotos de la carpeta
             val fotos = repository.obtenerFotosDeDispositivo(bucketId)
             listaMaestraFotos = fotos.toMutableList()
+
+            // 2. Cargar la lista negra (fotos ya importadas antes)
+            _urisUsadas.value = repository.obtenerUrisProcesadas()
 
             // Limpiamos selección previa
             _fotosSeleccionadas.value = emptySet()
@@ -160,22 +167,19 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     }
 
     // Paso 2: Confirmar selección -> Crear Sesión DB -> Ir al Editor
-    fun confirmarSeleccionYCrearSesion() {
+    fun confirmarSeleccionYCrearSesion(nombreSesion: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val seleccion = _fotosSeleccionadas.value.toList()
             if (seleccion.isNotEmpty()) {
                 _uiState.value = _uiState.value.copy(isLoading = true)
 
-                // 1. Crear sesión en DB
-                val nombreSesion = "Sesión ${System.currentTimeMillis()}"
+                // Usamos el nombre que viene del Dialog
                 val idSesion = repository.crearNuevaSesion(nombreSesion, seleccion)
                 currentSesionId = idSesion
 
-                // 2. Cargar fotos DESDE LA DB (Ahora trabajamos con la sesión)
                 listaMaestraFotos = repository.cargarFotosDeSesion(idSesion).toMutableList()
                 indiceActual = 0
 
-                // 3. Cambiar a vista Editor
                 _vistaActual.value = VistaActual.EDITOR
                 actualizarFotoVisible()
             }

@@ -248,4 +248,9 @@ class FotoRepository(
         sesionDao.eliminarSesion(sesionId)
         // Gracias a ON DELETE CASCADE, las fotos vinculadas se borran solas de la DB
     }
+
+    suspend fun obtenerUrisProcesadas(): Set<String> {
+        // Convertimos a Set para búsqueda instantánea O(1)
+        return sesionDao.obtenerTodasLasUrisUsadas().toSet()
+    }
 }

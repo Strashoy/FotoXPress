@@ -26,22 +26,39 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.rolesencia.fotoxpress.data.model.FotoEstado
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 
 @OptIn(ExperimentalFoundationApi::class) // Para combinedClickable (Click largo)
 @Composable
 fun PantallaGaleriaSeleccion(
     fotos: List<FotoEstado>,
     seleccionadas: Set<android.net.Uri>,
+    urisUsadas: Set<String>,
     onToggleSeleccion: (FotoEstado) -> Unit,
     onRangoSeleccion: (FotoEstado) -> Unit,
-    onCrearSesion: () -> Unit,
+    onCrearSesion: (String) -> Unit, // <--- Ahora recibe un String
     onSeleccionarTodo: () -> Unit,
     onCancelar: () -> Unit,
     onVolver: () -> Unit
+
 ) {
     val haySeleccion = seleccionadas.isNotEmpty()
     val sonTodas = seleccionadas.size == fotos.size && fotos.isNotEmpty()
 
+    // ESTADO PARA EL DIALOGO
+    var mostrarDialogoNombre by remember { mutableStateOf(false) }
+
+    // DIALOGO DE NOMBRE
+    if (mostrarDialogoNombre) {
+        DialogoNombreSesion(
+            onDismiss = { mostrarDialogoNombre = false },
+            onConfirm = { nombre ->
+                mostrarDialogoNombre = false
+                onCrearSesion(nombre)
+            }
+        )
+    }
     Scaffold(
         // BARRA INFERIOR CONTEXTUAL
         bottomBar = {
@@ -72,8 +89,7 @@ fun PantallaGaleriaSeleccion(
 
                     // 2. CENTRO: EDITAR (Deshabilitado si es 0)
                     Button(
-                        onClick = onCrearSesion,
-                        // LÓGICA: Solo habilitado si hay al menos 1 foto
+                        onClick = { mostrarDialogoNombre = true },                        // LÓGICA: Solo habilitado si hay al menos 1 foto
                         enabled = haySeleccion,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -112,6 +128,10 @@ fun PantallaGaleriaSeleccion(
             items(fotos, key = { it.uri.toString() }) { foto ->
                 val estaSeleccionada = seleccionadas.contains(foto.uri)
 
+                // LÓGICA DE ESTADO "YA USADA"
+                // Verificamos si la URI (String) está en el Set de usadas
+                val yaFueProcesada = urisUsadas.contains(foto.uri.toString())
+
                 Box(
                     modifier = Modifier
                         .aspectRatio(1f)
@@ -132,8 +152,38 @@ fun PantallaGaleriaSeleccion(
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().alpha(if (estaSeleccionada) 0.5f else 1f) // Oscurecer si seleccionada
+
+                        // --- LÓGICA DE BLANCO Y NEGRO ---
+                        colorFilter = if (yaFueProcesada) {
+                            ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                        } else null,
+
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // --- LÓGICA DE TRANSPARENCIA ---
+                            .graphicsLayer {
+                                if (yaFueProcesada) {
+                                    // Si ya fue usada, se ve oscura (0.3). Si la seleccionas, se aclara un poco (0.5)
+                                    alpha = if (estaSeleccionada) 0.5f else 0.3f
+                                } else {
+                                    // Normal
+                                    alpha = if (estaSeleccionada) 0.5f else 1f
+                                }
+                            }
                     )
+
+                    // ICONO DE "YA USADA" (La X o un Candado)
+                    if (yaFueProcesada && !estaSeleccionada) {
+                        Icon(
+                            imageVector = Icons.Default.Close, // La "X"
+                            contentDescription = "Ya procesada",
+                            tint = Color.Gray, // Gris sutil
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(48.dp) // Grande
+                                .padding(8.dp)
+                        )
+                    }
 
                     // CHECK ICON (Solo si seleccionada)
                     if (estaSeleccionada) {
@@ -158,3 +208,43 @@ fun PantallaGaleriaSeleccion(
 fun Modifier.alpha(alpha: Float) = this.then(
     Modifier.graphicsLayer(alpha = alpha)
 )
+
+// --- NUEVO COMPOSABLE PEQUEÑO ---
+@Composable
+fun DialogoNombreSesion(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var texto by remember { mutableStateOf("") }
+    // Sugerencia de nombre por fecha
+    LaunchedEffect(Unit) {
+        val sdf = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault())
+        texto = "Lote ${sdf.format(java.util.Date())}"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nombrar Sesión") },
+        text = {
+            Column {
+                Text("Dale un nombre para encontrarla luego:")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = texto,
+                    onValueChange = { texto = it },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(texto) }) {
+                Text("Comenzar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}

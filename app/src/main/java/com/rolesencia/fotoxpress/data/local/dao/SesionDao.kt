@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface SesionDao {
     // --- SESIONES ---
+
     @Query("SELECT s.*, (SELECT COUNT(*) FROM fotos_sesion f WHERE f.sesionId = s.id AND f.decision != 'PENDIENTE') as fotosEditadas FROM sesiones s ORDER BY s.fechaCreacion DESC")
     fun obtenerSesionesConProgreso(): Flow<List<SesionConProgreso>>
 
@@ -34,4 +35,8 @@ interface SesionDao {
 
     @Query("UPDATE fotos_sesion SET decision = :nuevaDecision WHERE id = :fotoId")
     suspend fun actualizarDecision(fotoId: Long, nuevaDecision: String)
+
+    // Obtenemos solo las URIs para chequeo rápido (Set de Strings)
+    @Query("SELECT uriString FROM fotos_sesion")
+    suspend fun obtenerTodasLasUrisUsadas(): List<String>
 }

@@ -180,6 +180,7 @@ fun PantallaSeleccion() {
 
                 // PANTALLA 2: GALERÍA DE SELECCIÓN (NUEVA)
                 FotoViewModel.VistaActual.GALERIA -> {
+                    val urisUsadas by viewModel.urisUsadas.collectAsState()
                     if (state.isLoading) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     } else {
@@ -188,10 +189,10 @@ fun PantallaSeleccion() {
                             seleccionadas = seleccionadas,
                             onToggleSeleccion = { viewModel.toggleSeleccion(it) },
                             onRangoSeleccion = { viewModel.seleccionarRango(it) },
-                            onCrearSesion = { viewModel.confirmarSeleccionYCrearSesion() },
-                            onSeleccionarTodo = { viewModel.seleccionarTodo() },
+                            onCrearSesion = { nombre -> viewModel.confirmarSeleccionYCrearSesion(nombre) },                            onSeleccionarTodo = { viewModel.seleccionarTodo() },
                             onCancelar = { viewModel.limpiarSeleccion() },
-                            onVolver = { viewModel.manejarVolver() } // Para salir de la carpeta
+                            onVolver = { viewModel.manejarVolver() }, // Para salir de la carpeta
+                            urisUsadas = urisUsadas
 
                         )
                     }
@@ -477,21 +478,35 @@ fun VistaEdicion(
 
             // 4. CAPA DE FEEDBACK (Overlay Verde/Rojo)
             if (dragOffset.absoluteValue > 10 && scaleUsuario <= 1.05f) {
+
+                // LÓGICA DE COLORES Y TEXTO
+                val esDerecha = dragOffset > 0
+                val esModificacion = rotacion != 0f
+
+                val (colorFondo, texto) = when {
+                    !esDerecha -> Pair(Color.Red, "ELIMINAR") // Izquierda siempre es Rojo
+                    esModificacion -> Pair(Color.Yellow, "MODIFICAR") // Derecha + Rotación = Amarillo
+                    else -> Pair(Color.Green, "CONSERVAR") // Derecha + Recto = Verde
+                }
+
+                // Color del texto: Si es Amarillo, el blanco no se lee bien, usamos Negro
+                val colorTexto = Color.White
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.horizontalGradient(
-                                colors = if (dragOffset > 0)
-                                    listOf(Color.Transparent, Color.Green.copy(alpha = 0.3f))
+                                colors = if (esDerecha)
+                                    listOf(Color.Transparent, colorFondo.copy(alpha = 0.5f)) // Un poco más opaco para ver el amarillo
                                 else
-                                    listOf(Color.Red.copy(alpha = 0.3f), Color.Transparent)
+                                    listOf(colorFondo.copy(alpha = 0.5f), Color.Transparent)
                             )
                         )
                 ) {
                     Text(
-                        text = if (dragOffset > 0) "CONSERVAR" else "ELIMINAR",
-                        color = Color.White,
+                        text = texto,
+                        color = colorTexto,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.Center)
@@ -499,7 +514,7 @@ fun VistaEdicion(
                 }
             }
 
-            // --- NUEVO: BOTÓN HOME (FLOTANTE ARRIBA) ---
+            // --- BOTÓN HOME (FLOTANTE ARRIBA) ---
             IconButton(
                 onClick = onPausar,
                 modifier = Modifier
