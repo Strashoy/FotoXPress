@@ -50,6 +50,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.draw.clipToBounds
@@ -236,7 +237,8 @@ fun PantallaSeleccion(
                             versionCache = state.versionCache,
                             onPausar = { viewModel.pausarSesion() },
                             onRotar = { d -> viewModel.actualizarRotacion(d) },
-                            onDecidir = { d -> viewModel.tomarDecision(d) }
+                            onDecidir = { d -> viewModel.tomarDecision(d) },
+                            onResetRotacion = { viewModel.setRotacionAbsoluta(0f) }
                         )
                     }
                 }
@@ -273,7 +275,7 @@ fun PantallaResumen(
             // --- MODO PROCESANDO ---
             Text(
                 "Aplicando cambios...",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -288,7 +290,7 @@ fun PantallaResumen(
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text(text = mensajeProgreso, color = Color.LightGray)
+            Text(text = mensajeProgreso, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         } else {
             Text("Configuración de Exportación", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -361,7 +363,9 @@ fun PantallaResumen(
 
             Button(
                 onClick = onAplicar,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary)
             ) {
                 Text("APLICAR CAMBIOS")
             }
@@ -383,7 +387,8 @@ fun VistaEdicion(
     versionCache: Long, // Recibimos el dato
     onPausar: () -> Unit,
     onRotar: (Float) -> Unit,
-    onDecidir: (Decision) -> Unit
+    onDecidir: (Decision) -> Unit,
+    onResetRotacion: () -> Unit
 ) {
     // ESTADO DEL ZOOM
     var scaleUsuario by remember { mutableFloatStateOf(1f) }
@@ -628,27 +633,54 @@ fun VistaEdicion(
             modifier = Modifier
                 .weight(0.2f)
                 .fillMaxWidth()
-                // En Light Mode será claro, separándose visualmente de la foto negra. Queda muy bien.
-                .background(MaterialTheme.colorScheme.surfaceContainer)                .draggable( // DETECTOR DE ROTACIÓN
+                // Fondo dinámico (Claro en LightMode, Oscuro en DarkMode)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .draggable(
                     orientation = Orientation.Horizontal,
                     state = rememberDraggableState { delta ->
-                        // DIVIDIMOS POR 5 PARA MAYOR PRECISIÓN
                         onRotar(delta / 5)
                     },
-                    interactionSource = interactionSource // Conexión del visor de rotación
+                    interactionSource = interactionSource
                 ),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "${rotacion.roundToInt()}°",
-                    color = MaterialTheme.colorScheme.primary, // Color principal del tema
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold
-                )
+
+                // CAMBIO AQUÍ: Usamos una Row para poner el texto y el botón lado a lado
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "${rotacion.roundToInt()}°",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // Solo mostramos el botón si hay rotación (tolerancia 0.1)
+                    if (kotlin.math.abs(rotacion) > 0.1f) {
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        IconButton(
+                            onClick = onResetRotacion,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                                .size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Resetear Rotación",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = "< ARRASTRA PARA ENDEREZAR >",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, // Color secundario
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )

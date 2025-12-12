@@ -68,18 +68,14 @@ fun PantallaGaleriaSeleccion(
                     contentPadding = PaddingValues(horizontal = 16.dp)
                 ) {
                     // 1. IZQUIERDA: SELECCIONAR TODO
-                    // Usamos TextButton para que sea fácil de tocar pero no invasivo
                     TextButton(
-                        // Si ya son todas, el botón sirve para cancelar (Nada).
-                        // Si falta alguna, el botón sirve para seleccionar todo.
                         onClick = if (sonTodas) onCancelar else onSeleccionarTodo,
+                        // CAMBIO: Color dinámico (Negro en Light / Blanco en Dark)
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurface
                         )
                     ) {
-                        // Cambiamos el icono si ya están todas para dar feedback visual
                         Icon(
-                            // Icono visual
                             if (sonTodas) Icons.Default.Close else Icons.Default.Menu,
                             contentDescription = null
                         )
@@ -87,11 +83,11 @@ fun PantallaGaleriaSeleccion(
                         Text(if (sonTodas) "Nada" else "Todo")
                     }
 
-                    Spacer(modifier = Modifier.weight(1f)) // Empujamos al centro
+                    Spacer(modifier = Modifier.weight(1f))
 
-                    // 2. CENTRO: EDITAR (Deshabilitado si es 0)
+                    // 2. CENTRO: EDITAR (Este ya estaba bien con Primary)
                     Button(
-                        onClick = { mostrarDialogoNombre = true },                        // LÓGICA: Solo habilitado si hay al menos 1 foto
+                        onClick = { mostrarDialogoNombre = true },
                         enabled = haySeleccion,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -103,17 +99,16 @@ fun PantallaGaleriaSeleccion(
                         Text("EDITAR (${seleccionadas.size})")
                     }
 
-                    Spacer(modifier = Modifier.weight(1f)) // Empujamos a la derecha
+                    Spacer(modifier = Modifier.weight(1f))
 
                     // 3. DERECHA: CANCELAR / VOLVER
                     TextButton(
-                        // LÓGICA: Si hay selección, limpia. Si no, sale de la carpeta.
                         onClick = if (haySeleccion) onCancelar else onVolver,
+                        // CAMBIO: Color secundario dinámico (Gris oscuro en Light / Gris claro en Dark)
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) {
-                        // Cambiamos el texto según el contexto
                         Text(if (haySeleccion) "Cancelar" else "Volver")
                     }
                 }

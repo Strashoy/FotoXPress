@@ -503,4 +503,22 @@ class FotoViewModel(private val repository: FotoRepository) : ViewModel() {
     fun setNombreCarpetaDestino(nombre: String) {
         _uiState.value = _uiState.value.copy(nombreCarpetaDestino = nombre)
     }
+
+    // --- FUNCIÓN PARA EL BOTÓN DE RESET ---
+    fun setRotacionAbsoluta(valor: Float) {
+        val foto = _uiState.value.fotoActual ?: return
+
+        // Actualizamos la lista maestra
+        val index = listaMaestraFotos.indexOfFirst { it.id == foto.id }
+        if (index != -1) {
+            val fotoActualizada = listaMaestraFotos[index].copy(rotacion = valor)
+            listaMaestraFotos[index] = fotoActualizada
+
+            // Actualizamos la foto en pantalla
+            _uiState.value = _uiState.value.copy(fotoActual = fotoActualizada)
+
+            // Forzamos la decisión: Si es 0 absoluto -> PENDIENTE (o lo que corresponda), si no -> CONSERVAR
+            // (Opcional: puedes dejar que el usuario decida con el swipe, pero el reset suele implicar volver a cero)
+        }
+    }
 }
