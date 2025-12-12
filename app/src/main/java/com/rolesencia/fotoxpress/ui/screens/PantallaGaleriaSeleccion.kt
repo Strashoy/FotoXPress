@@ -63,8 +63,8 @@ fun PantallaGaleriaSeleccion(
         // BARRA INFERIOR CONTEXTUAL
         bottomBar = {
                 BottomAppBar(
-                    containerColor = Color.DarkGray, // O MaterialTheme.colorScheme.surfaceContainer
-                    contentColor = Color.White,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                     contentPadding = PaddingValues(horizontal = 16.dp)
                 ) {
                     // 1. IZQUIERDA: SELECCIONAR TODO
@@ -73,7 +73,9 @@ fun PantallaGaleriaSeleccion(
                         // Si ya son todas, el botón sirve para cancelar (Nada).
                         // Si falta alguna, el botón sirve para seleccionar todo.
                         onClick = if (sonTodas) onCancelar else onSeleccionarTodo,
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
                         // Cambiamos el icono si ya están todas para dar feedback visual
                         Icon(
@@ -93,7 +95,9 @@ fun PantallaGaleriaSeleccion(
                         enabled = haySeleccion,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
-                            disabledContainerColor = Color.Gray.copy(alpha = 0.5f) // Estilo visual deshabilitado
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     ) {
                         Text("EDITAR (${seleccionadas.size})")
@@ -105,14 +109,16 @@ fun PantallaGaleriaSeleccion(
                     TextButton(
                         // LÓGICA: Si hay selección, limpia. Si no, sale de la carpeta.
                         onClick = if (haySeleccion) onCancelar else onVolver,
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color.LightGray)
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
                         // Cambiamos el texto según el contexto
                         Text(if (haySeleccion) "Cancelar" else "Volver")
                     }
                 }
         },
-        containerColor = Color.Black
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 100.dp),

@@ -68,7 +68,10 @@ import androidx.compose.material.icons.filled.Home
 import com.rolesencia.fotoxpress.ui.screens.PantallaGaleriaSeleccion
 
 @Composable
-fun PantallaSeleccion() {
+fun PantallaSeleccion(
+    isDarkTheme: Boolean,
+    onThemeToggle: () -> Unit
+) {
 
     // --- INYECCIÓN DE DEPENDENCIAS MANUAL (NUEVO) ---
     val context = LocalContext.current
@@ -139,8 +142,7 @@ fun PantallaSeleccion() {
     // 4. ESTRUCTURA PRINCIPAL DE NAVEGACIÓN
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = Color.Black
-    ) { paddingValues ->
+        containerColor = MaterialTheme.colorScheme.background    ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
             // --- AQUÍ DECIDIMOS QUÉ PANTALLA MOSTRAR ---
@@ -156,6 +158,8 @@ fun PantallaSeleccion() {
 
                     PantallaInicio(
                         sesiones = listaSesiones,
+                        isDarkTheme = isDarkTheme,
+                        onThemeToggle = onThemeToggle,
                         onNuevaSesion = { viewModel.irANuevaImportacion() },
                         onRetomarSesion = { id -> viewModel.retomarSesion(id) },
                         onBorrarSesion = { id -> viewModel.borrarSesion(id) }
@@ -590,10 +594,10 @@ fun VistaEdicion(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(16.dp),
-                // Color sólido DarkGray (igual que el panel de abajo)
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.DarkGray,
-                    contentColor = Color.White
+                    // En Light Mode será blanco/gris claro, en Dark Mode será oscuro
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Icon(Icons.Default.Home, contentDescription = "Pausar")
@@ -601,15 +605,17 @@ fun VistaEdicion(
 
             // Contador
             Surface(
-                color = Color.DarkGray, // Color sólido
+                color = MaterialTheme.colorScheme.surfaceContainerHigh, // Dinámico
                 shape = CircleShape,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
             ) {
+                val textoContador = if (fotosRestantes == 1) "Falta: 1" else "Faltan: $fotosRestantes"
+
                 Text(
-                    text = "Faltan: $fotosRestantes",
-                    color = Color.White,
+                    text = textoContador,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -622,8 +628,8 @@ fun VistaEdicion(
             modifier = Modifier
                 .weight(0.2f)
                 .fillMaxWidth()
-                .background(Color.DarkGray)
-                .draggable( // DETECTOR DE ROTACIÓN
+                // En Light Mode será claro, separándose visualmente de la foto negra. Queda muy bien.
+                .background(MaterialTheme.colorScheme.surfaceContainer)                .draggable( // DETECTOR DE ROTACIÓN
                     orientation = Orientation.Horizontal,
                     state = rememberDraggableState { delta ->
                         // DIVIDIMOS POR 5 PARA MAYOR PRECISIÓN
@@ -636,13 +642,13 @@ fun VistaEdicion(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "${rotacion.roundToInt()}°",
-                    color = Color.Yellow,
+                    color = MaterialTheme.colorScheme.primary, // Color principal del tema
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "< ARRASTRA PARA ENDEREZAR >",
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, // Color secundario
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )
@@ -662,13 +668,13 @@ fun PantallaSeleccionCarpeta(
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.background(Color.Black)
-    ) {
+        modifier = Modifier.background(MaterialTheme.colorScheme.background)    ) {
         items(carpetas) { carpeta ->
             Card(
                 onClick = { onCarpetaClick(carpeta.id) },
-                colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
-            ) {
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )            ) {
                 Column {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -681,8 +687,8 @@ fun PantallaSeleccionCarpeta(
                         modifier = Modifier.fillMaxWidth().height(120.dp)
                     )
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(carpeta.nombre, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text("${carpeta.cantidadFotos} fotos", color = Color.Gray, fontSize = 12.sp)
+                        Text(carpeta.nombre, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("${carpeta.cantidadFotos} fotos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
             }

@@ -32,3 +32,6 @@ val Typography = Typography(
     )
     */
 )
+
+// NUEVO MODELO
+val AppTypography = Typography()

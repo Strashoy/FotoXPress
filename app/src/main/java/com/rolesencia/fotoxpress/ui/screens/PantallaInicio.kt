@@ -7,7 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,6 +26,8 @@ import java.util.*
 @Composable
 fun PantallaInicio(
     sesiones: List<SesionConProgreso>,
+    isDarkTheme: Boolean,
+    onThemeToggle: () -> Unit,
     onNuevaSesion: () -> Unit,
     onRetomarSesion: (Long) -> Unit,
     onBorrarSesion: (Long) -> Unit
@@ -34,7 +38,7 @@ fun PantallaInicio(
             ExtendedFloatingActionButton(
                 onClick = onNuevaSesion,
                 containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
+                contentColor = MaterialTheme.colorScheme.onPrimary, // Usamos el color del tema
                 modifier = Modifier.padding(bottom = 20.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -42,7 +46,8 @@ fun PantallaInicio(
                 Text("NUEVA IMPORTACIÓN")
             }
         },
-        containerColor = Color.Black
+        // Usamos el color de fondo del tema nuevo
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -50,26 +55,51 @@ fun PantallaInicio(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            Text(
-                "Tus Sesiones",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+
+            // --- CABECERA CON BOTÓN DE TEMA ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, // Separa Titulo y Boton
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Tus Sesiones",
+                    color = MaterialTheme.colorScheme.onBackground, // Color adaptativo
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // BOTÓN DE CAMBIO DE TEMA (Estilo "Home")
+                IconButton(
+                    onClick = onThemeToggle,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        // Usamos DarkGray si es oscuro, o Primary si es claro, o fijo según prefieras.
+                        // Para mantener el estilo "Home", usaremos un color sólido que contraste.
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    // Si es Dark mostramos Sol (para ir a luz), si es Light mostramos Luna
+                    Icon(
+                        imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = "Cambiar Tema"
+                    )
+                }
+            }
 
             if (sesiones.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         "No tienes ediciones pendientes.\nCrea una nueva para empezar.",
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    // Esto permite que el último item suba más allá del botón flotante.
                     contentPadding = PaddingValues(bottom = 100.dp)
                 ) {
                     items(sesiones, key = { it.sesion.id }) { item ->
@@ -93,7 +123,10 @@ fun ItemSesion(
     }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.DarkGray),
+        // Usamos Surface Variant (que suele ser un gris suave o tintado)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick(sesion.id) }
@@ -106,18 +139,16 @@ fun ItemSesion(
                 // TITULO
                 Text(
                     text = sesion.nombre,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface, // Color texto principal                    fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // FECHA (Gris sutil)
+                // FECHA
                 Text(
                     text = "Creada: $fecha",
-                    color = Color.LightGray.copy(alpha = 0.7f),
-                    fontSize = 12.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, // Color texto secundario                    fontSize = 12.sp
                 )
 
                 Spacer(modifier = Modifier.height(4.dp)) // Espacio para separar
@@ -125,8 +156,7 @@ fun ItemSesion(
                 // PROGRESO (Blanco y destacado)
                 Text(
                     text = "Progreso: ${item.fotosEditadas} de ${sesion.cantidadFotos}",
-                    color = Color.White, // Ahora se ve perfecto
-                    fontWeight = FontWeight.Medium, // Un poco más gordita la letra
+                    color = MaterialTheme.colorScheme.primary, // Usamos el color Primario (Azul/Violeta)                    fontWeight = FontWeight.Medium, // Un poco más gordita la letra
                     fontSize = 14.sp
                 )
             }
@@ -136,8 +166,7 @@ fun ItemSesion(
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Borrar",
-                    tint = Color.Gray
-                )
+                    tint = MaterialTheme.colorScheme.error) // Color de error semántico
             }
         }
     }
