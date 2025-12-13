@@ -22,10 +22,30 @@ import com.rolesencia.fotoxpress.ui.screens.PantallaSeleccion
 import com.rolesencia.fotoxpress.ui.theme.FotoXPressTheme
 import com.rolesencia.fotoxpress.ui.theme.UOMTheme
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+
+        // 1. INSTALAR EL SPLASH (Justo antes del super.onCreate)
+        val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
+
+        // 2. LA ESPERA DRAMÁTICA (2 Segundos)
+        var mantenerSplash = true
+
+        lifecycleScope.launch {
+            delay(2000) // 2 segundos para mostrar el logo
+            mantenerSplash = false
+        }
+
+        // Bloqueamos el pintado de la app hasta que termine el timer
+        splashScreen.setKeepOnScreenCondition { mantenerSplash }
+
         setContent {
             // DETECTAMOS EL TEMA DEL SISTEMA
             val systemDark = isSystemInDarkTheme()

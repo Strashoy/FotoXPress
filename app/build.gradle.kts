@@ -7,14 +7,12 @@ plugins {
 
 android {
     namespace = "com.rolesencia.fotoxpress"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.rolesencia.fotoxpress"
         minSdk = 27
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -73,4 +71,7 @@ dependencies {
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     ksp("androidx.room:room-compiler:$room_version")
+
+    // API de Splash Screen
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }
